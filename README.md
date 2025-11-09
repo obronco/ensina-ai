@@ -1,0 +1,236 @@
+# Ensina AI 📚
+
+An AI-powered math tutor that uses the Socratic method to help students learn through guided questioning. Built with Claude AI and Streamlit.
+
+## Features
+
+- **🤖 Socratic Tutoring**: AI instructor asks guiding questions instead of just giving answers
+- **👨‍🎓 Student Interface**: Clean chat interface for students to get math help
+- **👨‍👩‍👧 Parent Dashboard**: Review session summaries and track progress
+- **💾 Progress Tracking**: Automatic session saving with summaries and topics
+- **🎯 Grade-Appropriate**: Tutor adapts language to student's grade level
+- **📊 Session Analytics**: Track time spent, topics covered, and learning progress
+
+## Architecture
+
+Built with clean abstractions for easy future migration:
+
+```
+src/
+├── config.py       # Configuration management
+├── storage.py      # Database layer (SQLite, swappable to Postgres)
+├── tutor.py        # AI tutoring logic (Claude, swappable to other LLMs)
+└── app.py          # Streamlit UI (swappable to web framework)
+```
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11 or higher
+- Anthropic API key ([Get one here](https://console.anthropic.com/))
+
+### Installation
+
+1. **Clone and navigate to the repository:**
+   ```bash
+   cd ensina-ai
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   ```
+
+4. **Edit `.env` and add your Anthropic API key:**
+   ```bash
+   ANTHROPIC_API_KEY=your_api_key_here
+   ```
+
+5. **Run the application:**
+   ```bash
+   streamlit run app.py
+   ```
+
+6. **Open your browser:**
+   The app will automatically open at `http://localhost:8501`
+
+## Usage
+
+### First Time Setup
+
+1. Go to **⚙️ Setup** page
+2. Add a student with their name, grade level, and parent email
+3. Navigate to **👨‍🎓 Student** page to start learning!
+
+### Student Mode
+
+1. Select your name from the dropdown
+2. Ask math questions in the chat
+3. The tutor will guide you with questions, not just answers
+4. Click "🔄 New Session" when done to save your progress
+
+### Parent Dashboard
+
+1. Go to **👨‍👩‍👧 Parent Dashboard**
+2. Select a student to view their sessions
+3. See summaries, topics covered, and full conversations
+4. Track time spent and areas where they struggled or excelled
+
+## How It Works
+
+### Socratic Method
+
+The AI tutor is designed to:
+- Ask guiding questions instead of giving direct answers
+- Build conceptual understanding, not just procedural knowledge
+- Encourage critical thinking
+- Make mistakes feel safe and part of learning
+- Use age-appropriate language and examples
+
+### Example Interaction
+
+```
+Student: I don't understand fractions
+
+Tutor: Great question! Let me help you understand fractions.
+Imagine you have a pizza. If you cut it into 4 equal pieces
+and eat 1 piece, what fraction of the pizza did you eat?
+
+Student: 1/4?
+
+Tutor: Exactly! The bottom number (4) tells us how many equal
+pieces the pizza was cut into. What do you think the top
+number (1) represents?
+```
+
+## Project Structure
+
+```
+ensina-ai/
+├── src/
+│   ├── config.py           # Configuration and settings
+│   ├── storage.py          # Database models and operations
+│   ├── tutor.py            # AI tutoring logic
+│   └── __init__.py
+├── data/
+│   └── ensina.db           # SQLite database (auto-created)
+├── app.py                  # Main Streamlit application
+├── requirements.txt        # Python dependencies
+├── .env.example            # Environment template
+├── .gitignore
+└── README.md
+```
+
+## Database Schema
+
+### Students
+- `id`: Primary key
+- `name`: Student name
+- `grade_level`: 1-12
+- `parent_email`: Contact for reports
+- `created_at`: Timestamp
+
+### Sessions
+- `id`: Primary key
+- `student_id`: Foreign key to students
+- `timestamp`: Session start time
+- `messages`: Full conversation (JSON)
+- `summary`: AI-generated summary
+- `topics`: Comma-separated topics
+- `duration_minutes`: Session length
+
+### Progress
+- `student_id`: Foreign key to students
+- `topic`: Math topic (e.g., "fractions")
+- `mastery_level`: 0.0 to 1.0
+- `last_practiced`: Date
+
+## Future Enhancements
+
+The architecture is designed to make these additions straightforward:
+
+- [ ] Multi-tenant accounts with authentication
+- [ ] Structured curriculum with lessons and modules
+- [ ] Gamification (badges, XP, streaks)
+- [ ] Mobile app (reuse API layer)
+- [ ] Progress analytics and insights
+- [ ] Email summaries to parents
+- [ ] Practice problem generation
+- [ ] Multiple subjects beyond math
+- [ ] Migrate to PostgreSQL for scale
+- [ ] Deploy to Streamlit Cloud or web hosting
+
+## Configuration
+
+Edit `.env` to customize:
+
+```bash
+# Required
+ANTHROPIC_API_KEY=your_key_here
+
+# Optional
+DATABASE_PATH=data/ensina.db
+DEFAULT_MODEL=claude-3-5-sonnet-20241022
+APP_NAME=Ensina AI
+```
+
+## Deployment
+
+### Local Use (Recommended for MVP)
+```bash
+streamlit run app.py
+```
+
+### Streamlit Cloud (Free Hosting)
+1. Push your code to GitHub (excluding `.env`)
+2. Go to [share.streamlit.io](https://share.streamlit.io)
+3. Connect your repository
+4. Add `ANTHROPIC_API_KEY` to Secrets in Streamlit Cloud settings
+5. Deploy!
+
+## Cost Considerations
+
+- **Claude API**: Pay per token used
+- **Typical session**: ~$0.01-0.05 per session
+- **Estimate**: ~$5-10/month for 1 student with daily use
+- Monitor usage in Anthropic Console
+
+## Troubleshooting
+
+### "Configuration Error: ANTHROPIC_API_KEY not found"
+- Make sure you copied `.env.example` to `.env`
+- Add your API key to `.env` file
+- Restart the application
+
+### Database issues
+- Delete `data/ensina.db` to reset
+- Database will be recreated automatically
+
+### Import errors
+- Make sure you're running from the project root
+- Verify all dependencies: `pip install -r requirements.txt`
+
+## Contributing
+
+This is a personal project, but feedback and suggestions are welcome!
+
+## License
+
+MIT License - Feel free to use and modify for your own family or educational purposes.
+
+## Credits
+
+Built with:
+- [Anthropic Claude](https://www.anthropic.com/claude) - AI tutoring
+- [Streamlit](https://streamlit.io/) - Web interface
+- [SQLite](https://www.sqlite.org/) - Database
+
+---
+
+Made with ❤️ for better math education
