@@ -118,10 +118,17 @@ ensina-ai/
 │   ├── storage.py          # Database models and operations
 │   ├── tutor.py            # AI tutoring logic
 │   └── __init__.py
+├── tests/
+│   ├── test_storage.py     # Storage layer tests
+│   ├── test_tutor.py       # Tutor logic tests (mocked LLM)
+│   ├── conftest.py         # Test fixtures
+│   └── __init__.py
 ├── data/
 │   └── ensina.db           # SQLite database (auto-created)
 ├── app.py                  # Main Streamlit application
+├── test_setup.py           # Setup verification script
 ├── requirements.txt        # Python dependencies
+├── pytest.ini              # Pytest configuration
 ├── .env.example            # Environment template
 ├── .gitignore
 └── README.md
@@ -165,6 +172,51 @@ The architecture is designed to make these additions straightforward:
 - [ ] Multiple subjects beyond math
 - [ ] Migrate to PostgreSQL for scale
 - [ ] Deploy to Streamlit Cloud or web hosting
+
+## Testing
+
+The project includes comprehensive unit tests for business logic with mocked LLM calls.
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage report
+pytest --cov=src --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_storage.py
+pytest tests/test_tutor.py
+
+# Run with verbose output
+pytest -v
+
+# Generate HTML coverage report
+pytest --cov=src --cov-report=html
+# Then open htmlcov/index.html in your browser
+```
+
+### Test Structure
+
+- **`tests/test_storage.py`**: Tests for database operations (no mocking needed)
+- **`tests/test_tutor.py`**: Tests for AI tutor logic with mocked Claude API
+- **`tests/conftest.py`**: Shared fixtures and test configuration
+
+### What's Tested
+
+- ✅ Student CRUD operations
+- ✅ Session creation and retrieval
+- ✅ Progress tracking
+- ✅ Data integrity and isolation
+- ✅ Tutor response generation (mocked)
+- ✅ Session summary generation (mocked)
+- ✅ System prompt personalization
+- ✅ Message formatting
+- ✅ Error handling
+
+All tests use mocked LLM calls, so **no API key required** and **zero cost** to run tests!
 
 ## Configuration
 

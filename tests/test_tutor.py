@@ -1,0 +1,368 @@
+"""Tests for tutoring logic with mocked LLM."""
+import pytest
+from unittest.mock import Mock, MagicMock, patch
+from src.tutor import MathTutor
+from src.storage import Student
+
+
+class TestTutorInitialization:
+    """Test tutor initialization."""
+
+    def test_tutor_creation(self, storage):
+        """Test that tutor can be created with storage."""
+        tutor = MathTutor(storage)
+
+        assert tutor.storage == storage
+        assert tutor.client is not None
+        assert tutor.model is not None
+
+
+class TestTutorResponses:
+    """Test tutor response generation with mocked API."""
+
+    def test_get_response_sync(self, tutor_with_mock, sample_student):
+        """Test getting a response from the tutor."""
+        conversation_history = [
+            {"role": "assistant", "content": "Hello! How can I help?"}
+        ]
+        new_message = "I need help with fractions"
+
+        response = tutor_with_mock.get_response_sync(
+            student=sample_student,
+            conversation_history=conversation_history,
+            new_message=new_message
+        )
+
+        # Verify response is returned
+        assert response == "This is a mocked tutor response."
+
+        # Verify the API was called correctly
+        tutor_with_mock.client.messages.create.assert_called_once()
+
+        # Get the call arguments
+        call_args = tutor_with_mock.client.messages.create.call_args
+
+        # Verify messages were formatted correctly
+        assert call_args.kwargs["messages"] == [
+            {"role": "assistant", "content": "Hello! How can I help?"},
+            {"role": "user", "content": "I need help with fractions"}
+        ]
+
+        # Verify system prompt includes student context
+        assert "Test Student" in call_args.kwargs["system"]
+        assert "Grade Level: 5" in call_args.kwargs["system"]
+
+    def test_system_prompt_includes_student_context(self, tutor_with_mock, sample_student):
+        """Test that system prompt is personalized for the student."""
+        conversation_history = []
+        new_message = "Hello"
+
+        tutor_with_mock.get_response_sync(
+            student=sample_student,
+            conversation_history=conversation_history,
+            new_message=new_message
+        )
+
+        call_args = tutor_with_mock.client.messages.create.call_args
+        system_prompt = call_args.kwargs["system"]
+
+        # Verify student details are in system prompt
+        assert sample_student.name in system_prompt
+        assert str(sample_student.grade_level) in system_prompt
+        assert "Socratic" in system_prompt or "socratic" in system_prompt.lower()
+
+    def test_conversation_history_preserved(self, tutor_with_mock, sample_student):
+        """Test that conversation history is properly maintained."""
+        long_history = [
+            {"role": "assistant", "content": "Message 1"},
+            {"role": "user", "content": "Message 2"},
+            {"role": "assistant", "content": "Message 3"},
+            {"role": "user", "content": "Message 4"},
+        ]
+
+        tutor_with_mock.get_response_sync(
+            student=sample_student,
+            conversation_history=long_history,
+            new_message="Message 5"
+        )
+
+        call_args = tutor_with_mock.client.messages.create.call_args
+        messages = call_args.kwargs["messages"]
+
+        # Should have all previous messages plus the new one
+        assert len(messages) == 5
+        assert messages[-1] == {"role": "user", "content": "Message 5"}
+
+    def test_different_grade_levels(self, tutor_with_mock, storage):
+        """Test that different grade levels get appropriate context."""
+        # Test with elementary student
+        elementary = storage.create_student("Kid", 3, "parent@test.com")
+        tutor_with_mock.get_response_sync(elementary, [], "Help me")
+
+        call_args_elem = tutor_with_mock.client.messages.create.call_args
+        system_elem = call_args_elem.kwargs["system"]
+
+        # Reset mock
+        tutor_with_mock.client.messages.create.reset_mock()
+
+        # Test with high school student
+        highschool = storage.create_student("Teen", 11, "parent@test.com")
+        tutor_with_mock.get_response_sync(highschool, [], "Help me")
+
+        call_args_hs = tutor_with_mock.client.messages.create.call_args
+        system_hs = call_args_hs.kwargs["system"]
+
+        # Both should have grade level mentioned
+        assert "grade 3" in system_elem.lower()
+        assert "grade 11" in system_hs.lower()
+
+
+class TestSessionSummaryGeneration:
+    """Test AI-generated session summaries with mocked API."""
+
+    def test_generate_session_summary(self, tutor_with_mock, sample_student, sample_messages):
+        """Test generating a summary from a conversation."""
+        # Mock the summary response
+        mock_summary_response = MagicMock()
+        mock_summary_response.content = [MagicMock(
+            text="SUMMARY: Student practiced basic fraction concepts.\nTOPICS: fractions, addition"
+        )]
+
+        tutor_with_mock.client.messages.create.return_value = mock_summary_response
+
+        result = tutor_with_mock.generate_session_summary(
+            student=sample_student,
+            messages=sample_messages
+        )
+
+        # Verify structure
+        assert "summary" in result
+        assert "topics" in result
+
+        # Verify content
+        assert "practiced basic fraction concepts" in result["summary"]
+        assert "fractions" in result["topics"]
+        assert "addition" in result["topics"]
+
+    def test_summary_includes_conversation_context(self, tutor_with_mock, sample_student):
+        """Test that the summary request includes the full conversation."""
+        messages = [
+            {"role": "user", "content": "What is 1/2 + 1/2?"},
+            {"role": "assistant", "content": "Let's think about this..."},
+            {"role": "user", "content": "Is it 1?"},
+            {"role": "assistant", "content": "Correct!"}
+        ]
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(
+            text="SUMMARY: Student learned fraction addition.\nTOPICS: fractions, addition"
+        )]
+        tutor_with_mock.client.messages.create.return_value = mock_response
+
+        tutor_with_mock.generate_session_summary(sample_student, messages)
+
+        # Verify the API was called
+        call_args = tutor_with_mock.client.messages.create.call_args
+        prompt = call_args.kwargs["messages"][0]["content"]
+
+        # The prompt should include the conversation
+        assert "1/2 + 1/2" in prompt
+        assert "Correct!" in prompt
+
+    def test_summary_handles_malformed_response(self, tutor_with_mock, sample_student):
+        """Test that summary generation handles unexpected response formats."""
+        # Mock a response without the expected format
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(
+            text="Just some random text without proper formatting"
+        )]
+        tutor_with_mock.client.messages.create.return_value = mock_response
+
+        result = tutor_with_mock.generate_session_summary(
+            student=sample_student,
+            messages=[{"role": "user", "content": "test"}]
+        )
+
+        # Should still return something
+        assert "summary" in result
+        assert "topics" in result
+
+        # Should have fallbacks
+        assert len(result["summary"]) > 0
+        assert len(result["topics"]) > 0
+
+    def test_summary_with_empty_conversation(self, tutor_with_mock, sample_student):
+        """Test summary generation with minimal conversation."""
+        messages = [{"role": "user", "content": "Hi"}]
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(
+            text="SUMMARY: Brief greeting.\nTOPICS: greeting"
+        )]
+        tutor_with_mock.client.messages.create.return_value = mock_response
+
+        result = tutor_with_mock.generate_session_summary(sample_student, messages)
+
+        assert result["summary"] is not None
+        assert result["topics"] is not None
+
+
+class TestInitialGreeting:
+    """Test initial greeting generation."""
+
+    def test_get_initial_greeting(self, tutor_with_mock, sample_student):
+        """Test getting an initial greeting for a student."""
+        greeting = tutor_with_mock.get_initial_greeting(sample_student)
+
+        # Should include student name
+        assert sample_student.name in greeting
+
+        # Should be friendly/welcoming
+        assert any(word in greeting.lower() for word in ["hi", "hello", "hey"])
+
+        # Should mention math
+        assert "math" in greeting.lower()
+
+    def test_greeting_different_students(self, tutor_with_mock, storage):
+        """Test that greetings can vary."""
+        students = [
+            storage.create_student(f"Student {i}", 5, f"p{i}@test.com")
+            for i in range(5)
+        ]
+
+        greetings = [
+            tutor_with_mock.get_initial_greeting(student)
+            for student in students
+        ]
+
+        # All greetings should include student names
+        for i, greeting in enumerate(greetings):
+            assert f"Student {i}" in greeting
+
+
+class TestTutorConfiguration:
+    """Test tutor configuration and model settings."""
+
+    def test_tutor_uses_configured_model(self, storage, mock_anthropic_client):
+        """Test that tutor uses the configured model."""
+        tutor = MathTutor(storage)
+        tutor.client = mock_anthropic_client
+
+        student = storage.create_student("Test", 5, "test@test.com")
+
+        tutor.get_response_sync(student, [], "test message")
+
+        call_args = mock_anthropic_client.messages.create.call_args
+
+        # Should use the model from config
+        assert "model" in call_args.kwargs
+        assert "claude" in call_args.kwargs["model"].lower()
+
+    def test_tutor_sets_reasonable_max_tokens(self, storage, mock_anthropic_client):
+        """Test that tutor sets appropriate token limits."""
+        tutor = MathTutor(storage)
+        tutor.client = mock_anthropic_client
+
+        student = storage.create_student("Test", 5, "test@test.com")
+
+        tutor.get_response_sync(student, [], "test message")
+
+        call_args = mock_anthropic_client.messages.create.call_args
+
+        # Should have a max_tokens parameter
+        assert "max_tokens" in call_args.kwargs
+        assert call_args.kwargs["max_tokens"] > 0
+        assert call_args.kwargs["max_tokens"] <= 4096  # Reasonable limit
+
+
+class TestErrorHandling:
+    """Test error handling in tutor logic."""
+
+    def test_api_error_propagates(self, tutor_with_mock, sample_student):
+        """Test that API errors are propagated appropriately."""
+        # Make the mock raise an exception
+        tutor_with_mock.client.messages.create.side_effect = Exception("API Error")
+
+        with pytest.raises(Exception) as exc_info:
+            tutor_with_mock.get_response_sync(
+                sample_student,
+                [],
+                "test message"
+            )
+
+        assert "API Error" in str(exc_info.value)
+
+
+class TestBusinessLogic:
+    """Test core business logic without UI concerns."""
+
+    def test_tutor_builds_correct_message_format(self, tutor_with_mock, sample_student):
+        """Test that messages are formatted correctly for the API."""
+        history = [
+            {"role": "assistant", "content": "Hello"},
+            {"role": "user", "content": "Hi"},
+        ]
+
+        tutor_with_mock.get_response_sync(sample_student, history, "New message")
+
+        call_args = tutor_with_mock.client.messages.create.call_args
+        messages = call_args.kwargs["messages"]
+
+        # Should have exactly 3 messages
+        assert len(messages) == 3
+
+        # Should maintain alternating roles
+        assert messages[0]["role"] == "assistant"
+        assert messages[1]["role"] == "user"
+        assert messages[2]["role"] == "user"
+
+        # Should have correct content
+        assert messages[0]["content"] == "Hello"
+        assert messages[1]["content"] == "Hi"
+        assert messages[2]["content"] == "New message"
+
+    def test_empty_conversation_history(self, tutor_with_mock, sample_student):
+        """Test handling of empty conversation history."""
+        response = tutor_with_mock.get_response_sync(
+            student=sample_student,
+            conversation_history=[],
+            new_message="First message"
+        )
+
+        assert response is not None
+
+        call_args = tutor_with_mock.client.messages.create.call_args
+        messages = call_args.kwargs["messages"]
+
+        # Should just have the new message
+        assert len(messages) == 1
+        assert messages[0]["content"] == "First message"
+
+    def test_summary_parsing_variations(self, tutor_with_mock, sample_student):
+        """Test parsing different summary response formats."""
+        test_cases = [
+            # Standard format
+            ("SUMMARY: Good session.\nTOPICS: math, fractions",
+             "Good session.", "math, fractions"),
+
+            # With extra whitespace
+            ("SUMMARY:   Good session.  \nTOPICS:   math, fractions  ",
+             "Good session.", "math, fractions"),
+
+            # Multiple lines for summary
+            ("SUMMARY: Good session.\nMore details here.\nTOPICS: math",
+             "Good session.", "math"),
+        ]
+
+        for response_text, expected_summary, expected_topics in test_cases:
+            mock_response = MagicMock()
+            mock_response.content = [MagicMock(text=response_text)]
+            tutor_with_mock.client.messages.create.return_value = mock_response
+
+            result = tutor_with_mock.generate_session_summary(
+                sample_student,
+                [{"role": "user", "content": "test"}]
+            )
+
+            assert expected_summary in result["summary"]
+            assert expected_topics in result["topics"]
