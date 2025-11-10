@@ -524,6 +524,55 @@ NEEDS_REVIEW: NO""")]),
         assert result["topics"] == "test topics"
 
 
+class TestTopicRelevanceGuardrail:
+    """Test the topic relevance checking (guardrail)."""
+
+    def test_short_messages_allowed(self, tutor_with_mock, sample_student):
+        """Short messages like greetings should be allowed."""
+        result = tutor_with_mock.check_topic_relevance(sample_student, "Hi")
+        assert result["is_relevant"] is True
+        assert result["suggested_response"] is None
+
+    def test_greeting_messages_allowed(self, tutor_with_mock, sample_student):
+        """Common greetings should be allowed."""
+        greetings = ["hello", "hey", "thanks", "thank you", "bye"]
+        for greeting in greetings:
+            result = tutor_with_mock.check_topic_relevance(sample_student, greeting)
+            assert result["is_relevant"] is True
+
+    def test_math_message_relevant(self, tutor_with_mock, mock_anthropic_client, sample_student):
+        """Math-related messages should be marked as relevant."""
+        # Mock Claude to respond with RELEVANT
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="RELEVANT")]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = tutor_with_mock.check_topic_relevance(sample_student, "Can you help me with fractions?")
+        assert result["is_relevant"] is True
+        assert result["suggested_response"] is None
+
+    def test_off_topic_message_flagged(self, tutor_with_mock, mock_anthropic_client, sample_student):
+        """Off-topic messages should be flagged."""
+        # Mock Claude to respond with OFF_TOPIC
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="OFF_TOPIC: Not related to math")]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = tutor_with_mock.check_topic_relevance(sample_student, "What's the weather today?")
+        assert result["is_relevant"] is False
+        assert "math" in result["suggested_response"].lower()
+        assert sample_student.name in result["suggested_response"]
+
+    def test_guardrail_fails_open(self, tutor_with_mock, mock_anthropic_client, sample_student):
+        """If guardrail check fails, should allow message (fail open)."""
+        # Mock API failure
+        mock_anthropic_client.messages.create.side_effect = Exception("API Error")
+
+        result = tutor_with_mock.check_topic_relevance(sample_student, "Can you help with history?")
+        assert result["is_relevant"] is True  # Fail open
+        assert "failed" in result["reason"].lower()
+
+
 class TestLearningIndicatorsAnalysis:
     """Test learning indicators analysis."""
 

@@ -160,6 +160,91 @@ TOPICS: [topic1, topic2, topic3]
         # Simple rotation based on student ID
         return greetings[student.id % len(greetings)] if student.id else greetings[0]
 
+    def check_topic_relevance(self, student: Student, message: str) -> Dict[str, any]:
+        """
+        Check if a message is related to math education (guardrail).
+
+        Args:
+            student: Student information
+            message: Message to check
+
+        Returns:
+            Dictionary with:
+            - is_relevant: bool (True if math-related)
+            - reason: str (explanation of decision)
+            - suggested_response: str (neutral warning if off-topic)
+        """
+        # Check for very short or greeting messages (always allow)
+        if len(message.strip()) < 5 or message.lower().strip() in ["hi", "hello", "hey", "thanks", "thank you", "bye"]:
+            return {
+                "is_relevant": True,
+                "reason": "Greeting or polite message",
+                "suggested_response": None
+            }
+
+        # Use Claude to check topic relevance
+        check_prompt = f"""You are a content filter for an educational math tutoring system for grade {student.grade_level} students.
+
+Determine if this message is related to math education or homework help.
+
+Student message: "{message}"
+
+A message is RELEVANT if it:
+- Asks about math concepts, problems, or homework
+- Requests help with specific math topics
+- Asks for explanation of mathematical ideas
+- Discusses mathematical thinking or problem-solving
+
+A message is OFF-TOPIC if it:
+- Asks about non-math subjects
+- Contains personal conversations unrelated to learning
+- Requests help with non-academic topics
+- Attempts to discuss inappropriate content
+
+Respond with ONLY one of:
+RELEVANT
+OFF_TOPIC: [brief reason why]
+
+Be lenient with students trying to learn math."""
+
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=50,
+                messages=[{"role": "user", "content": check_prompt}]
+            )
+
+            result_text = response.content[0].text.strip()
+
+            if result_text.startswith("RELEVANT"):
+                return {
+                    "is_relevant": True,
+                    "reason": "Message is related to math education",
+                    "suggested_response": None
+                }
+            elif result_text.startswith("OFF_TOPIC"):
+                reason = result_text.replace("OFF_TOPIC:", "").strip() or "Not related to math education"
+                return {
+                    "is_relevant": False,
+                    "reason": reason,
+                    "suggested_response": f"I'm here to help you with math, {student.name}. Let's focus on your math homework or any math concepts you're working on. What math topic can I help you with?"
+                }
+            else:
+                # Default to allowing if unclear
+                return {
+                    "is_relevant": True,
+                    "reason": "Uncertain classification, allowing message",
+                    "suggested_response": None
+                }
+
+        except Exception as e:
+            # If check fails, allow the message (fail open for better UX)
+            return {
+                "is_relevant": True,
+                "reason": f"Guardrail check failed: {str(e)}, allowing message",
+                "suggested_response": None
+            }
+
     def analyze_learning_indicators(
         self,
         student: Student,

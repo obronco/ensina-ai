@@ -54,6 +54,19 @@ class Progress:
     last_practiced: str
 
 
+@dataclass
+class Incident:
+    """Off-topic or inappropriate interaction incident."""
+    id: Optional[int]
+    student_id: int
+    session_id: Optional[int]  # May not be associated with a session yet
+    timestamp: str
+    incident_type: str  # "off_topic", "inappropriate", etc.
+    message: str  # The message that triggered the incident
+    reason: str  # Why it was flagged
+    resolved: bool = False  # Whether parent has acknowledged
+
+
 class Storage:
     """SQLite storage with clean abstraction for future migration."""
 
@@ -110,6 +123,22 @@ class Storage:
                 last_practiced DATE NOT NULL,
                 PRIMARY KEY (student_id, topic),
                 FOREIGN KEY (student_id) REFERENCES students(id)
+            )
+        """)
+
+        # Incidents table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS incidents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                session_id INTEGER,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                incident_type TEXT NOT NULL,
+                message TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                resolved BOOLEAN DEFAULT 0,
+                FOREIGN KEY (student_id) REFERENCES students(id),
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
             )
         """)
 
@@ -486,3 +515,108 @@ class Storage:
         conn.close()
 
         return row["avg_conf"] if row and row["avg_conf"] else None
+
+    # Incident operations
+    def create_incident(
+        self,
+        student_id: int,
+        incident_type: str,
+        message: str,
+        reason: str,
+        session_id: Optional[int] = None
+    ) -> Incident:
+        """Log an incident (e.g., off-topic message)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        timestamp = datetime.now().isoformat()
+
+        cursor.execute(
+            """
+            INSERT INTO incidents (student_id, session_id, timestamp, incident_type, message, reason, resolved)
+            VALUES (?, ?, ?, ?, ?, ?, 0)
+            """,
+            (student_id, session_id, timestamp, incident_type, message, reason)
+        )
+        incident_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+
+        return Incident(
+            id=incident_id,
+            student_id=student_id,
+            session_id=session_id,
+            timestamp=timestamp,
+            incident_type=incident_type,
+            message=message,
+            reason=reason,
+            resolved=False
+        )
+
+    def get_incidents(self, student_id: int, unresolved_only: bool = False) -> List[Incident]:
+        """Get incidents for a student."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        if unresolved_only:
+            cursor.execute(
+                "SELECT * FROM incidents WHERE student_id = ? AND resolved = 0 ORDER BY timestamp DESC",
+                (student_id,)
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM incidents WHERE student_id = ? ORDER BY timestamp DESC",
+                (student_id,)
+            )
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            Incident(
+                id=row["id"],
+                student_id=row["student_id"],
+                session_id=row["session_id"],
+                timestamp=row["timestamp"],
+                incident_type=row["incident_type"],
+                message=row["message"],
+                reason=row["reason"],
+                resolved=bool(row["resolved"])
+            )
+            for row in rows
+        ]
+
+    def mark_incident_resolved(self, incident_id: int):
+        """Mark an incident as resolved (parent acknowledged)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "UPDATE incidents SET resolved = 1 WHERE id = ?",
+            (incident_id,)
+        )
+
+        conn.commit()
+        conn.close()
+
+    def count_incidents(self, student_id: int, incident_type: Optional[str] = None) -> int:
+        """Count incidents for a student, optionally filtered by type."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        if incident_type:
+            cursor.execute(
+                "SELECT COUNT(*) as count FROM incidents WHERE student_id = ? AND incident_type = ?",
+                (student_id, incident_type)
+            )
+        else:
+            cursor.execute(
+                "SELECT COUNT(*) as count FROM incidents WHERE student_id = ?",
+                (student_id,)
+            )
+
+        row = cursor.fetchone()
+        conn.close()
+
+        return row["count"] if row else 0

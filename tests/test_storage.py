@@ -534,3 +534,119 @@ class TestAnalyticsQueries:
         """Test average confidence returns None when no data exists."""
         avg = storage.get_average_confidence(sample_student.id)
         assert avg is None
+
+
+class TestIncidentOperations:
+    """Test incident CRUD operations for guardrails."""
+
+    def test_create_incident(self, storage, sample_student):
+        """Test creating an incident."""
+        incident = storage.create_incident(
+            student_id=sample_student.id,
+            incident_type="off_topic",
+            message="What's the weather?",
+            reason="Not related to math"
+        )
+
+        assert incident.id is not None
+        assert incident.student_id == sample_student.id
+        assert incident.incident_type == "off_topic"
+        assert incident.message == "What's the weather?"
+        assert incident.reason == "Not related to math"
+        assert incident.resolved is False
+        assert incident.timestamp is not None
+
+    def test_get_incidents_for_student(self, storage, sample_student):
+        """Test retrieving incidents for a student."""
+        # Create multiple incidents
+        storage.create_incident(
+            sample_student.id,
+            "off_topic",
+            "Message 1",
+            "Reason 1"
+        )
+        storage.create_incident(
+            sample_student.id,
+            "off_topic",
+            "Message 2",
+            "Reason 2"
+        )
+
+        incidents = storage.get_incidents(sample_student.id)
+
+        assert len(incidents) == 2
+        # Incidents are ordered by timestamp DESC (newest first)
+        assert incidents[0].message == "Message 2"
+        assert incidents[1].message == "Message 1"
+
+    def test_get_unresolved_incidents_only(self, storage, sample_student):
+        """Test filtering incidents to only unresolved."""
+        # Create incidents
+        incident1 = storage.create_incident(
+            sample_student.id,
+            "off_topic",
+            "Message 1",
+            "Reason 1"
+        )
+        incident2 = storage.create_incident(
+            sample_student.id,
+            "off_topic",
+            "Message 2",
+            "Reason 2"
+        )
+
+        # Resolve one
+        storage.mark_incident_resolved(incident1.id)
+
+        # Get unresolved only
+        unresolved = storage.get_incidents(sample_student.id, unresolved_only=True)
+
+        assert len(unresolved) == 1
+        assert unresolved[0].id == incident2.id
+        assert unresolved[0].resolved is False
+
+    def test_mark_incident_resolved(self, storage, sample_student):
+        """Test marking an incident as resolved."""
+        incident = storage.create_incident(
+            sample_student.id,
+            "off_topic",
+            "Test message",
+            "Test reason"
+        )
+
+        assert incident.resolved is False
+
+        # Mark as resolved
+        storage.mark_incident_resolved(incident.id)
+
+        # Verify it's resolved
+        incidents = storage.get_incidents(sample_student.id)
+        assert incidents[0].resolved is True
+
+    def test_count_incidents(self, storage, sample_student):
+        """Test counting incidents for a student."""
+        # Create incidents
+        storage.create_incident(sample_student.id, "off_topic", "Msg 1", "Reason 1")
+        storage.create_incident(sample_student.id, "off_topic", "Msg 2", "Reason 2")
+        storage.create_incident(sample_student.id, "inappropriate", "Msg 3", "Reason 3")
+
+        # Count all incidents
+        total = storage.count_incidents(sample_student.id)
+        assert total == 3
+
+        # Count by type
+        off_topic_count = storage.count_incidents(sample_student.id, "off_topic")
+        assert off_topic_count == 2
+
+        inappropriate_count = storage.count_incidents(sample_student.id, "inappropriate")
+        assert inappropriate_count == 1
+
+    def test_get_incidents_empty(self, storage, sample_student):
+        """Test getting incidents when none exist."""
+        incidents = storage.get_incidents(sample_student.id)
+        assert incidents == []
+
+    def test_count_incidents_zero(self, storage, sample_student):
+        """Test counting incidents when none exist."""
+        count = storage.count_incidents(sample_student.id)
+        assert count == 0

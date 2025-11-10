@@ -102,33 +102,70 @@ if page == "👨‍🎓 Student":
 
     # Chat input
     if prompt := st.chat_input("Type your math question here..."):
-        # Add user message to chat
-        st.session_state.messages.append({
-            "role": "user",
-            "content": prompt
-        })
-
         # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Get tutor response
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                # Get response from tutor
-                response = tutor.get_response_sync(
-                    student=student,
-                    conversation_history=st.session_state.messages[:-1],  # Exclude the message we just added
-                    new_message=prompt
-                )
+        # Check topic relevance (guardrail)
+        relevance_check = tutor.check_topic_relevance(student, prompt)
 
-                st.markdown(response)
+        if not relevance_check["is_relevant"]:
+            # Log incident
+            storage.create_incident(
+                student_id=student.id,
+                incident_type="off_topic",
+                message=prompt,
+                reason=relevance_check["reason"]
+            )
 
-        # Add assistant response to chat
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response
-        })
+            # Display neutral warning (marked as off-topic)
+            with st.chat_message("assistant"):
+                warning = relevance_check["suggested_response"]
+                st.markdown(warning)
+
+            # Add to session state with off_topic marker for display, but exclude from conversation history
+            st.session_state.messages.append({
+                "role": "user",
+                "content": prompt,
+                "off_topic": True
+            })
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": warning,
+                "off_topic": True
+            })
+
+        else:
+            # Message is on-topic, proceed normally
+            # Add user message to chat
+            st.session_state.messages.append({
+                "role": "user",
+                "content": prompt
+            })
+
+            # Get tutor response - filter out off-topic messages from history
+            on_topic_history = [
+                {"role": msg["role"], "content": msg["content"]}
+                for msg in st.session_state.messages[:-1]
+                if not msg.get("off_topic", False)
+            ]
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    # Get response from tutor with filtered history
+                    response = tutor.get_response_sync(
+                        student=student,
+                        conversation_history=on_topic_history,
+                        new_message=prompt
+                    )
+
+                    st.markdown(response)
+
+            # Add assistant response to chat
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": response
+            })
 
     # Session controls
     st.markdown("---")
@@ -142,13 +179,20 @@ if page == "👨‍🎓 Student":
                     # Calculate duration
                     duration = int((datetime.now() - st.session_state.session_start).total_seconds() / 60)
 
-                    # Generate enhanced summary with analytics
-                    summary_data = tutor.generate_enhanced_session_summary(student, st.session_state.messages)
+                    # Filter out off-topic messages before saving
+                    on_topic_messages = [
+                        {"role": msg["role"], "content": msg["content"]}
+                        for msg in st.session_state.messages
+                        if not msg.get("off_topic", False)
+                    ]
+
+                    # Generate enhanced summary with analytics (only on-topic messages)
+                    summary_data = tutor.generate_enhanced_session_summary(student, on_topic_messages)
 
                     # Save to database with full analytics
                     storage.create_session(
                         student_id=student.id,
-                        messages=st.session_state.messages,
+                        messages=on_topic_messages,
                         summary=summary_data["summary"],
                         topics=summary_data["topics"],
                         duration_minutes=duration,
@@ -217,6 +261,34 @@ elif page == "👨‍👩‍👧 Parent Dashboard":
                 all_topics.extend([t.strip() for t in s.topics.split(",")])
         unique_topics = len(set(all_topics))
         st.metric("Topics Covered", unique_topics)
+
+    # Check for incidents
+    incidents = storage.get_incidents(student.id, unresolved_only=False)
+    if incidents:
+        st.markdown("---")
+        st.markdown("### ⚠️ Incidents")
+
+        unresolved_count = sum(1 for i in incidents if not i.resolved)
+
+        if unresolved_count > 0:
+            st.warning(f"**{unresolved_count} unresolved incident(s)**")
+        else:
+            st.info("All incidents have been reviewed")
+
+        with st.expander(f"View Incidents ({len(incidents)} total)", expanded=unresolved_count > 0):
+            for incident in incidents[:10]:  # Show last 10 incidents
+                status_icon = "✅" if incident.resolved else "🔴"
+                st.markdown(f"**{status_icon} {incident.timestamp[:16]} - {incident.incident_type.replace('_', ' ').title()}**")
+                st.markdown(f"*Message:* \"{incident.message}\"")
+                st.markdown(f"*Reason:* {incident.reason}")
+
+                if not incident.resolved:
+                    if st.button(f"Mark as reviewed", key=f"resolve_{incident.id}"):
+                        storage.mark_incident_resolved(incident.id)
+                        st.success("Marked as reviewed")
+                        st.rerun()
+
+                st.markdown("---")
 
     st.markdown("---")
 
