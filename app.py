@@ -142,16 +142,21 @@ if page == "👨‍🎓 Student":
                     # Calculate duration
                     duration = int((datetime.now() - st.session_state.session_start).total_seconds() / 60)
 
-                    # Generate summary
-                    summary_data = tutor.generate_session_summary(student, st.session_state.messages)
+                    # Generate enhanced summary with analytics
+                    summary_data = tutor.generate_enhanced_session_summary(student, st.session_state.messages)
 
-                    # Save to database
+                    # Save to database with full analytics
                     storage.create_session(
                         student_id=student.id,
                         messages=st.session_state.messages,
                         summary=summary_data["summary"],
                         topics=summary_data["topics"],
-                        duration_minutes=duration
+                        duration_minutes=duration,
+                        subtopics=summary_data["subtopics"],
+                        difficulty_level=summary_data["difficulty_level"],
+                        student_confidence=summary_data["student_confidence"],
+                        learning_indicators=summary_data["learning_indicators"],
+                        questions_asked=summary_data["questions_asked"]
                     )
 
                     st.success("✅ Session saved!")
@@ -219,9 +224,19 @@ elif page == "👨‍👩‍👧 Parent Dashboard":
     st.markdown("### 📚 Recent Sessions")
 
     for session in sessions:
+        # Build title with confidence indicator if available
+        confidence_emoji = ""
+        if session.student_confidence:
+            if session.student_confidence >= 0.7:
+                confidence_emoji = "😊"
+            elif session.student_confidence >= 0.5:
+                confidence_emoji = "😐"
+            else:
+                confidence_emoji = "😟"
+
         with st.expander(
             f"📅 {session.timestamp[:10]} at {session.timestamp[11:16]} - "
-            f"{session.topics or 'General Math'} ({session.duration_minutes or 0} min)"
+            f"{session.topics or 'General Math'} ({session.duration_minutes or 0} min) {confidence_emoji}"
         ):
             # Summary
             if session.summary:
@@ -230,11 +245,57 @@ elif page == "👨‍👩‍👧 Parent Dashboard":
             else:
                 st.warning("No summary available for this session.")
 
-            # Topics
+            # Analytics section if available
+            if session.student_confidence or session.subtopics or session.learning_indicators:
+                st.markdown("**📊 Learning Analytics:**")
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    if session.student_confidence:
+                        st.metric("Confidence", f"{int(session.student_confidence * 100)}%")
+
+                with col2:
+                    if session.difficulty_level:
+                        st.metric("Difficulty", f"{session.difficulty_level}/10")
+
+                with col3:
+                    if session.questions_asked:
+                        st.metric("Questions Asked", session.questions_asked)
+
+            # Topics and Subtopics
             if session.topics:
                 st.markdown("**Topics:**")
                 topics_list = [t.strip() for t in session.topics.split(",")]
                 st.markdown("• " + "\n• ".join(topics_list))
+
+                if session.subtopics:
+                    st.markdown("**Subtopics:**")
+                    st.markdown("• " + "\n• ".join(session.subtopics))
+
+            # Learning Indicators
+            if session.learning_indicators:
+                indicators = session.learning_indicators
+
+                if indicators.mastered:
+                    st.markdown("**✅ Mastered:**")
+                    st.success("• " + "\n• ".join(indicators.mastered))
+
+                if indicators.struggled_with:
+                    st.markdown("**⚠️ Struggled With:**")
+                    st.warning("• " + "\n• ".join(indicators.struggled_with))
+
+                if indicators.misconceptions:
+                    st.markdown("**🔍 Misconceptions:**")
+                    st.error("• " + "\n• ".join(indicators.misconceptions))
+
+                if indicators.breakthrough_moments:
+                    st.markdown("**💡 Breakthrough Moments:**")
+                    st.info("• " + "\n• ".join(indicators.breakthrough_moments))
+
+                if indicators.needs_review:
+                    st.markdown("**📝 Recommendation:**")
+                    st.info("This topic needs more practice and review.")
 
             # Full conversation
             st.markdown("**Full Conversation:**")

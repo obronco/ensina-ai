@@ -18,6 +18,16 @@ class Student:
 
 
 @dataclass
+class LearningIndicators:
+    """Learning signals extracted from a session."""
+    struggled_with: List[str]  # Concepts student found difficult
+    mastered: List[str]  # Concepts student understood well
+    misconceptions: List[str]  # Specific errors in understanding
+    breakthrough_moments: List[str]  # Messages where understanding clicked
+    needs_review: bool  # Whether topic needs more practice
+
+
+@dataclass
 class Session:
     """Tutoring session model."""
     id: Optional[int]
@@ -27,6 +37,12 @@ class Session:
     summary: Optional[str] = None
     topics: Optional[str] = None  # Comma-separated
     duration_minutes: Optional[int] = None
+    # Enhanced analytics fields
+    subtopics: Optional[List[str]] = None  # More granular topic breakdown
+    difficulty_level: Optional[int] = None  # 1-10 estimate
+    student_confidence: Optional[float] = None  # 0.0-1.0 from conversation analysis
+    learning_indicators: Optional[LearningIndicators] = None  # Detailed learning signals
+    questions_asked: Optional[int] = None  # Count of student questions
 
 
 @dataclass
@@ -82,6 +98,9 @@ class Storage:
             )
         """)
 
+        # Add new analytics columns if they don't exist (for existing databases)
+        self._add_analytics_columns(cursor)
+
         # Progress table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS progress (
@@ -96,6 +115,29 @@ class Storage:
 
         conn.commit()
         conn.close()
+
+    def _add_analytics_columns(self, cursor):
+        """Add analytics columns to sessions table if they don't exist."""
+        # Get existing columns
+        cursor.execute("PRAGMA table_info(sessions)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Add new columns if they don't exist
+        new_columns = {
+            "subtopics": "TEXT",  # JSON array
+            "difficulty_level": "INTEGER",
+            "student_confidence": "REAL",
+            "learning_indicators": "TEXT",  # JSON object
+            "questions_asked": "INTEGER"
+        }
+
+        for column, column_type in new_columns.items():
+            if column not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE sessions ADD COLUMN {column} {column_type}")
+                except sqlite3.OperationalError:
+                    # Column might already exist from a previous run
+                    pass
 
     # Student operations
     def create_student(self, name: str, grade_level: int, parent_email: str) -> Student:
@@ -170,21 +212,42 @@ class Storage:
         messages: List[Dict[str, str]],
         summary: Optional[str] = None,
         topics: Optional[str] = None,
-        duration_minutes: Optional[int] = None
+        duration_minutes: Optional[int] = None,
+        subtopics: Optional[List[str]] = None,
+        difficulty_level: Optional[int] = None,
+        student_confidence: Optional[float] = None,
+        learning_indicators: Optional[LearningIndicators] = None,
+        questions_asked: Optional[int] = None
     ) -> Session:
-        """Save a tutoring session."""
+        """Save a tutoring session with enhanced analytics."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
         messages_json = json.dumps(messages)
         timestamp = datetime.now().isoformat()
 
+        # Serialize complex fields
+        subtopics_json = json.dumps(subtopics) if subtopics else None
+        learning_indicators_json = None
+        if learning_indicators:
+            learning_indicators_json = json.dumps({
+                "struggled_with": learning_indicators.struggled_with,
+                "mastered": learning_indicators.mastered,
+                "misconceptions": learning_indicators.misconceptions,
+                "breakthrough_moments": learning_indicators.breakthrough_moments,
+                "needs_review": learning_indicators.needs_review
+            })
+
         cursor.execute(
             """
-            INSERT INTO sessions (student_id, timestamp, messages, summary, topics, duration_minutes)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO sessions (
+                student_id, timestamp, messages, summary, topics, duration_minutes,
+                subtopics, difficulty_level, student_confidence, learning_indicators, questions_asked
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (student_id, timestamp, messages_json, summary, topics, duration_minutes)
+            (student_id, timestamp, messages_json, summary, topics, duration_minutes,
+             subtopics_json, difficulty_level, student_confidence, learning_indicators_json, questions_asked)
         )
         session_id = cursor.lastrowid
 
@@ -198,7 +261,41 @@ class Storage:
             messages=messages,
             summary=summary,
             topics=topics,
-            duration_minutes=duration_minutes
+            duration_minutes=duration_minutes,
+            subtopics=subtopics,
+            difficulty_level=difficulty_level,
+            student_confidence=student_confidence,
+            learning_indicators=learning_indicators,
+            questions_asked=questions_asked
+        )
+
+    def _deserialize_session(self, row) -> Session:
+        """Helper to deserialize a session row."""
+        # Deserialize learning indicators if present
+        learning_indicators = None
+        if row.get("learning_indicators"):
+            data = json.loads(row["learning_indicators"])
+            learning_indicators = LearningIndicators(
+                struggled_with=data.get("struggled_with", []),
+                mastered=data.get("mastered", []),
+                misconceptions=data.get("misconceptions", []),
+                breakthrough_moments=data.get("breakthrough_moments", []),
+                needs_review=data.get("needs_review", False)
+            )
+
+        return Session(
+            id=row["id"],
+            student_id=row["student_id"],
+            timestamp=row["timestamp"],
+            messages=json.loads(row["messages"]),
+            summary=row["summary"],
+            topics=row["topics"],
+            duration_minutes=row["duration_minutes"],
+            subtopics=json.loads(row["subtopics"]) if row.get("subtopics") else None,
+            difficulty_level=row.get("difficulty_level"),
+            student_confidence=row.get("student_confidence"),
+            learning_indicators=learning_indicators,
+            questions_asked=row.get("questions_asked")
         )
 
     def get_session(self, session_id: int) -> Optional[Session]:
@@ -213,15 +310,7 @@ class Storage:
         if not row:
             return None
 
-        return Session(
-            id=row["id"],
-            student_id=row["student_id"],
-            timestamp=row["timestamp"],
-            messages=json.loads(row["messages"]),
-            summary=row["summary"],
-            topics=row["topics"],
-            duration_minutes=row["duration_minutes"]
-        )
+        return self._deserialize_session(row)
 
     def list_sessions(self, student_id: int, limit: int = 50) -> List[Session]:
         """List sessions for a student."""
@@ -235,18 +324,7 @@ class Storage:
         rows = cursor.fetchall()
         conn.close()
 
-        return [
-            Session(
-                id=row["id"],
-                student_id=row["student_id"],
-                timestamp=row["timestamp"],
-                messages=json.loads(row["messages"]),
-                summary=row["summary"],
-                topics=row["topics"],
-                duration_minutes=row["duration_minutes"]
-            )
-            for row in rows
-        ]
+        return [self._deserialize_session(row) for row in rows]
 
     def update_session_summary(self, session_id: int, summary: str, topics: str):
         """Update session with AI-generated summary."""
@@ -304,3 +382,103 @@ class Storage:
             )
             for row in rows
         ]
+
+    # Analytics operations
+    def get_popular_topics(self, grade_level: Optional[int] = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get most discussed topics across students."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        if grade_level:
+            cursor.execute("""
+                SELECT topics, COUNT(*) as count
+                FROM sessions s
+                JOIN students st ON s.student_id = st.id
+                WHERE st.grade_level = ? AND topics IS NOT NULL
+                GROUP BY topics
+                ORDER BY count DESC
+                LIMIT ?
+            """, (grade_level, limit))
+        else:
+            cursor.execute("""
+                SELECT topics, COUNT(*) as count
+                FROM sessions
+                WHERE topics IS NOT NULL
+                GROUP BY topics
+                ORDER BY count DESC
+                LIMIT ?
+            """, (limit,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [{"topic": row["topics"], "count": row["count"]} for row in rows]
+
+    def get_student_topic_history(self, student_id: int) -> List[Dict[str, Any]]:
+        """Get chronological history of topics discussed by a student."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT topics, subtopics, timestamp, student_confidence
+            FROM sessions
+            WHERE student_id = ? AND topics IS NOT NULL
+            ORDER BY timestamp ASC
+        """, (student_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [{
+            "topics": row["topics"],
+            "subtopics": json.loads(row["subtopics"]) if row["subtopics"] else [],
+            "timestamp": row["timestamp"],
+            "confidence": row["student_confidence"]
+        } for row in rows]
+
+    def get_struggling_areas(self, student_id: int) -> List[str]:
+        """Identify topics where student consistently struggles."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT learning_indicators
+            FROM sessions
+            WHERE student_id = ? AND learning_indicators IS NOT NULL
+        """, (student_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        # Aggregate struggled_with across sessions
+        struggles = {}
+        for row in rows:
+            indicators = json.loads(row["learning_indicators"])
+            for struggle in indicators.get("struggled_with", []):
+                struggles[struggle] = struggles.get(struggle, 0) + 1
+
+        # Return topics mentioned multiple times, sorted by frequency
+        return [topic for topic, count in sorted(struggles.items(), key=lambda x: x[1], reverse=True) if count >= 2]
+
+    def get_average_confidence(self, student_id: int, topic: Optional[str] = None) -> Optional[float]:
+        """Get average confidence level for student, optionally filtered by topic."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        if topic:
+            cursor.execute("""
+                SELECT AVG(student_confidence) as avg_conf
+                FROM sessions
+                WHERE student_id = ? AND topics LIKE ? AND student_confidence IS NOT NULL
+            """, (student_id, f"%{topic}%"))
+        else:
+            cursor.execute("""
+                SELECT AVG(student_confidence) as avg_conf
+                FROM sessions
+                WHERE student_id = ? AND student_confidence IS NOT NULL
+            """, (student_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        return row["avg_conf"] if row and row["avg_conf"] else None
