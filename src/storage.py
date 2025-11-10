@@ -273,7 +273,7 @@ class Storage:
         """Helper to deserialize a session row."""
         # Deserialize learning indicators if present
         learning_indicators = None
-        if row.get("learning_indicators"):
+        if "learning_indicators" in row.keys() and row["learning_indicators"]:
             data = json.loads(row["learning_indicators"])
             learning_indicators = LearningIndicators(
                 struggled_with=data.get("struggled_with", []),
@@ -283,6 +283,10 @@ class Storage:
                 needs_review=data.get("needs_review", False)
             )
 
+        # Helper to safely get optional fields
+        def get_field(field_name):
+            return row[field_name] if field_name in row.keys() else None
+
         return Session(
             id=row["id"],
             student_id=row["student_id"],
@@ -291,11 +295,11 @@ class Storage:
             summary=row["summary"],
             topics=row["topics"],
             duration_minutes=row["duration_minutes"],
-            subtopics=json.loads(row["subtopics"]) if row.get("subtopics") else None,
-            difficulty_level=row.get("difficulty_level"),
-            student_confidence=row.get("student_confidence"),
+            subtopics=json.loads(get_field("subtopics")) if get_field("subtopics") else None,
+            difficulty_level=get_field("difficulty_level"),
+            student_confidence=get_field("student_confidence"),
             learning_indicators=learning_indicators,
-            questions_asked=row.get("questions_asked")
+            questions_asked=get_field("questions_asked")
         )
 
     def get_session(self, session_id: int) -> Optional[Session]:

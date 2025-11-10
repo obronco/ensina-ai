@@ -3,7 +3,7 @@ import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
-from src.storage import Storage, Student
+from src.storage import Storage, Student, LearningIndicators
 from src.tutor import MathTutor
 
 
@@ -61,6 +61,18 @@ def mock_anthropic_client():
     mock_client.messages.create.return_value = mock_response
 
     return mock_client
+
+
+@pytest.fixture
+def sample_learning_indicators():
+    """Sample learning indicators for testing."""
+    return LearningIndicators(
+        struggled_with=["finding common denominators"],
+        mastered=["identifying numerator and denominator"],
+        misconceptions=["thought you add numerators and denominators"],
+        breakthrough_moments=["Oh! The bottom number has to match first!"],
+        needs_review=True
+    )
 
 
 @pytest.fixture

@@ -366,3 +366,204 @@ class TestBusinessLogic:
 
             assert expected_summary in result["summary"]
             assert expected_topics in result["topics"]
+
+
+class TestConfidenceEstimation:
+    """Test confidence estimation from conversations."""
+
+    def test_estimate_confidence_high(self, tutor_with_mock, sample_student):
+        """Test confidence estimation for successful session."""
+        messages = [
+            {"role": "assistant", "content": "Let's solve this problem."},
+            {"role": "user", "content": "I think it's 5?"},
+            {"role": "assistant", "content": "Perfect! That's exactly right!"},
+            {"role": "user", "content": "And this one is 10"},
+            {"role": "assistant", "content": "Excellent work! You've got it."},
+        ]
+
+        confidence = tutor_with_mock.estimate_confidence(sample_student, messages)
+
+        # Should be high confidence (multiple positive feedback)
+        assert confidence > 0.6
+
+    def test_estimate_confidence_low(self, tutor_with_mock, sample_student):
+        """Test confidence estimation for struggling session."""
+        messages = [
+            {"role": "assistant", "content": "Let's try this problem."},
+            {"role": "user", "content": "I'm not sure... maybe 3?"},
+            {"role": "assistant", "content": "Not quite, let's think about this differently."},
+            {"role": "user", "content": "I guess 5?"},
+            {"role": "assistant", "content": "Almost, but think about what we just discussed."},
+        ]
+
+        confidence = tutor_with_mock.estimate_confidence(sample_student, messages)
+
+        # Should be lower confidence (hesitation + correction)
+        assert confidence < 0.6
+
+    def test_estimate_confidence_short_conversation(self, tutor_with_mock, sample_student):
+        """Test confidence estimation for very short conversation."""
+        messages = [{"role": "user", "content": "Hi"}]
+
+        confidence = tutor_with_mock.estimate_confidence(sample_student, messages)
+
+        # Should be neutral for short conversations
+        assert confidence == 0.5
+
+
+class TestQuestionCounting:
+    """Test counting student questions."""
+
+    def test_count_student_questions(self, tutor_with_mock):
+        """Test counting questions in messages."""
+        messages = [
+            {"role": "user", "content": "What is 2+2?"},
+            {"role": "assistant", "content": "Let's figure it out!"},
+            {"role": "user", "content": "Is it 4?"},
+            {"role": "user", "content": "I understand now"},  # Not a question
+            {"role": "user", "content": "What about 3+3?"},
+        ]
+
+        count = tutor_with_mock.count_student_questions(messages)
+
+        assert count == 3  # Three messages with question marks
+
+    def test_count_no_questions(self, tutor_with_mock):
+        """Test counting when no questions asked."""
+        messages = [
+            {"role": "user", "content": "I need help"},
+            {"role": "assistant", "content": "Sure!"},
+            {"role": "user", "content": "Thanks"},
+        ]
+
+        count = tutor_with_mock.count_student_questions(messages)
+
+        assert count == 0
+
+
+class TestDifficultyEstimation:
+    """Test difficulty level estimation."""
+
+    def test_estimate_difficulty_basic(self, tutor_with_mock, sample_student):
+        """Test difficulty for basic topics."""
+        difficulty = tutor_with_mock.estimate_difficulty(sample_student, "addition, subtraction")
+
+        # Should be lower than grade level for basic topics
+        assert difficulty < sample_student.grade_level
+
+    def test_estimate_difficulty_advanced(self, tutor_with_mock, sample_student):
+        """Test difficulty for advanced topics."""
+        difficulty = tutor_with_mock.estimate_difficulty(sample_student, "algebra, geometry")
+
+        # Should be higher than grade level for advanced topics
+        assert difficulty > sample_student.grade_level
+
+    def test_estimate_difficulty_grade_appropriate(self, tutor_with_mock, sample_student):
+        """Test difficulty for grade-appropriate topics."""
+        difficulty = tutor_with_mock.estimate_difficulty(sample_student, "fractions, decimals")
+
+        # Should be around grade level
+        assert 1 <= difficulty <= 10
+
+
+class TestEnhancedSessionSummary:
+    """Test comprehensive session summary generation."""
+
+    def test_generate_enhanced_summary(self, tutor_with_mock, sample_student, sample_messages):
+        """Test generating enhanced summary with all analytics."""
+        # Mock responses for all the API calls
+        mock_responses = [
+            # Basic summary
+            MagicMock(content=[MagicMock(text="SUMMARY: Student learned fractions.\nTOPICS: fractions")]),
+            # Subtopics
+            MagicMock(content=[MagicMock(text="adding fractions, simplifying fractions")]),
+            # Learning indicators
+            MagicMock(content=[MagicMock(text="""STRUGGLED_WITH: [common denominators]
+MASTERED: [basic fractions]
+MISCONCEPTIONS: [adding numerators and denominators]
+BREAKTHROUGH_MOMENTS: [understood the concept]
+NEEDS_REVIEW: YES""")]),
+        ]
+
+        tutor_with_mock.client.messages.create.side_effect = mock_responses
+
+        result = tutor_with_mock.generate_enhanced_session_summary(sample_student, sample_messages)
+
+        # Verify all components are present
+        assert "summary" in result
+        assert "topics" in result
+        assert "subtopics" in result
+        assert "difficulty_level" in result
+        assert "student_confidence" in result
+        assert "learning_indicators" in result
+        assert "questions_asked" in result
+
+        # Verify data types
+        assert isinstance(result["subtopics"], list)
+        assert isinstance(result["difficulty_level"], int)
+        assert isinstance(result["student_confidence"], float)
+        assert isinstance(result["questions_asked"], int)
+
+    def test_enhanced_summary_includes_basic_fields(self, tutor_with_mock, sample_student, sample_messages):
+        """Test that enhanced summary includes original basic summary fields."""
+        mock_responses = [
+            MagicMock(content=[MagicMock(text="SUMMARY: Test summary.\nTOPICS: test topics")]),
+            MagicMock(content=[MagicMock(text="subtopic1, subtopic2")]),
+            MagicMock(content=[MagicMock(text="""STRUGGLED_WITH: []
+MASTERED: []
+MISCONCEPTIONS: []
+BREAKTHROUGH_MOMENTS: []
+NEEDS_REVIEW: NO""")]),
+        ]
+
+        tutor_with_mock.client.messages.create.side_effect = mock_responses
+
+        result = tutor_with_mock.generate_enhanced_session_summary(sample_student, sample_messages)
+
+        assert "Test summary" in result["summary"]
+        assert result["topics"] == "test topics"
+
+
+class TestLearningIndicatorsAnalysis:
+    """Test learning indicators analysis."""
+
+    def test_analyze_learning_indicators(self, tutor_with_mock, sample_student):
+        """Test extracting learning indicators from conversation."""
+        messages = [
+            {"role": "user", "content": "I don't understand fractions"},
+            {"role": "assistant", "content": "Let's break it down..."},
+            {"role": "user", "content": "Oh! Now I get it!"},
+        ]
+
+        # Mock the API response
+        mock_response = MagicMock(content=[MagicMock(text="""STRUGGLED_WITH: [understanding fractions initially]
+MASTERED: [basic concept of fractions]
+MISCONCEPTIONS: [thought fractions were whole numbers]
+BREAKTHROUGH_MOMENTS: [Oh! Now I get it!]
+NEEDS_REVIEW: NO""")])
+
+        tutor_with_mock.client.messages.create.return_value = mock_response
+
+        indicators = tutor_with_mock.analyze_learning_indicators(sample_student, messages)
+
+        assert len(indicators.struggled_with) > 0
+        assert len(indicators.mastered) > 0
+        assert len(indicators.breakthrough_moments) > 0
+        assert indicators.needs_review is False
+
+    def test_extract_subtopics(self, tutor_with_mock, sample_student):
+        """Test extracting subtopics from conversation."""
+        messages = [
+            {"role": "user", "content": "Help with adding fractions"},
+            {"role": "assistant", "content": "Let's find common denominators first..."},
+        ]
+
+        # Mock the API response
+        mock_response = MagicMock(content=[MagicMock(text="adding fractions, common denominators, simplifying")])
+        tutor_with_mock.client.messages.create.return_value = mock_response
+
+        subtopics = tutor_with_mock.extract_subtopics(sample_student, messages, "fractions")
+
+        assert isinstance(subtopics, list)
+        assert len(subtopics) > 0
+        assert len(subtopics) <= 5  # Should be limited to 5
