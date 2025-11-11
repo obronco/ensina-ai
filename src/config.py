@@ -32,7 +32,16 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # API Configuration
 ANTHROPIC_API_KEY = _get_config("ANTHROPIC_API_KEY")
-DEFAULT_MODEL = _get_config("DEFAULT_MODEL", "claude-3-5-sonnet-20241022")
+
+# Model Configuration
+# SLOW_MODEL: For complex tasks requiring deep reasoning (tutoring, analysis)
+SLOW_MODEL = _get_config("SLOW_MODEL", "claude-3-5-sonnet-20241022")
+
+# FAST_MODEL: For simple tasks (guardrails, classification, parsing)
+FAST_MODEL = _get_config("FAST_MODEL", "claude-3-5-haiku-20241022")
+
+# Legacy support - DEFAULT_MODEL maps to SLOW_MODEL
+DEFAULT_MODEL = _get_config("DEFAULT_MODEL", SLOW_MODEL)
 
 # Database Configuration
 DATABASE_PATH = _get_config("DATABASE_PATH", str(DATA_DIR / "ensina.db"))

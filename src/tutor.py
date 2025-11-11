@@ -2,7 +2,7 @@
 from typing import List, Dict, Optional
 import re
 from anthropic import Anthropic
-from src.config import ANTHROPIC_API_KEY, DEFAULT_MODEL, TUTOR_SYSTEM_PROMPT
+from src.config import ANTHROPIC_API_KEY, SLOW_MODEL, FAST_MODEL, TUTOR_SYSTEM_PROMPT
 from src.storage import Storage, Student, LearningIndicators
 
 
@@ -13,7 +13,9 @@ class MathTutor:
         """Initialize tutor with Claude client and storage."""
         self.client = Anthropic(api_key=ANTHROPIC_API_KEY)
         self.storage = storage
-        self.model = DEFAULT_MODEL
+        self.slow_model = SLOW_MODEL  # For tutoring, analysis, summaries
+        self.fast_model = FAST_MODEL  # For guardrails, quick checks
+        self.model = SLOW_MODEL  # Legacy compatibility
 
     def _build_system_prompt(self, student: Student) -> str:
         """Build personalized system prompt based on student info."""
@@ -45,9 +47,9 @@ class MathTutor:
             {"role": "user", "content": new_message}
         ]
 
-        # Get response from Claude
+        # Get response from Claude using slow model for quality tutoring
         response = self.client.messages.create(
-            model=self.model,
+            model=self.slow_model,
             max_tokens=1024,
             system=self._build_system_prompt(student),
             messages=messages
@@ -77,9 +79,9 @@ class MathTutor:
             {"role": "user", "content": new_message}
         ]
 
-        # Get response from Claude
+        # Get response from Claude using slow model for quality tutoring
         response = self.client.messages.create(
-            model=self.model,
+            model=self.slow_model,
             max_tokens=1024,
             system=self._build_system_prompt(student),
             messages=messages
@@ -126,8 +128,9 @@ SUMMARY: [your summary here]
 TOPICS: [topic1, topic2, topic3]
 """
 
+        # Use slow model for comprehensive session summary
         response = self.client.messages.create(
-            model=self.model,
+            model=self.slow_model,
             max_tokens=512,
             messages=[{"role": "user", "content": summary_prompt}]
         )
@@ -208,8 +211,9 @@ OFF_TOPIC: [brief reason why]
 Be lenient with students trying to learn math."""
 
         try:
+            # Use fast model for quick guardrail check
             response = self.client.messages.create(
-                model=self.model,
+                model=self.fast_model,
                 max_tokens=50,
                 messages=[{"role": "user", "content": check_prompt}]
             )
@@ -289,8 +293,9 @@ BREAKTHROUGH_MOMENTS: [moment1, moment2, ...]
 NEEDS_REVIEW: [YES or NO]
 """
 
+        # Use slow model for detailed learning indicators analysis
         response = self.client.messages.create(
-            model=self.model,
+            model=self.slow_model,
             max_tokens=512,
             messages=[{"role": "user", "content": analysis_prompt}]
         )
@@ -430,8 +435,9 @@ List specific subtopics as a comma-separated list (e.g., "adding fractions, comm
 
 SUBTOPICS:"""
 
+        # Use fast model for simple subtopic extraction
         response = self.client.messages.create(
-            model=self.model,
+            model=self.fast_model,
             max_tokens=100,
             messages=[{"role": "user", "content": prompt}]
         )

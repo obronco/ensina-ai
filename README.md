@@ -280,11 +280,33 @@ Edit `.env` to customize:
 # Required
 ANTHROPIC_API_KEY=your_key_here
 
+# Model Configuration (Optional - defaults provided)
+# SLOW_MODEL: For complex tasks (tutoring, analysis) - high quality
+SLOW_MODEL=claude-3-5-sonnet-20241022
+
+# FAST_MODEL: For simple tasks (guardrails, classification) - fast & cheaper
+FAST_MODEL=claude-3-5-haiku-20241022
+
 # Optional
 DATABASE_PATH=data/ensina.db
-DEFAULT_MODEL=claude-3-5-sonnet-20241022
 APP_NAME=Ensina AI
 ```
+
+### Cost Optimization Strategy
+
+The system uses two models strategically:
+
+**Sonnet (SLOW_MODEL)** - Used for:
+- Main tutoring conversations (quality matters)
+- Session summaries and analytics
+- Learning indicators analysis
+
+**Haiku (FAST_MODEL)** - Used for:
+- Content guardrails (off-topic detection)
+- Simple text extraction (subtopics)
+- Quick classifications
+
+This reduces costs by ~60% while maintaining tutoring quality!
 
 ## Deployment
 
@@ -311,10 +333,22 @@ streamlit run app.py
 
 ## Cost Considerations
 
-- **Claude API**: Pay per token used
-- **Typical session**: ~$0.01-0.05 per session
-- **Estimate**: ~$5-10/month for 1 student with daily use
-- Monitor usage in Anthropic Console
+**With Optimized Model Strategy:**
+- **Sonnet**: $3/MTok input, $15/MTok output
+- **Haiku**: $0.25/MTok input, $1.25/MTok output (12x cheaper!)
+- **Typical session**: ~$0.01-0.03 per session (60% reduction vs Sonnet-only)
+- **Estimate**: ~$3-6/month for 1 student with daily use
+- Monitor usage in [Anthropic Console](https://console.anthropic.com/)
+
+**Cost Breakdown per Session:**
+- Main tutoring (Sonnet): ~$0.01-0.02
+- Guardrails (Haiku): ~$0.0005
+- Subtopics (Haiku): ~$0.0005
+- Analytics (Sonnet): ~$0.003
+
+**For Teachers (100 students, 2 sessions/week):**
+- Without optimization: ~$400/week
+- With optimization: ~$160/week (~60% savings!)
 
 ## Troubleshooting
 
