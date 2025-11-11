@@ -32,6 +32,11 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # API Configuration
 ANTHROPIC_API_KEY = _get_config("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = _get_config("OPENAI_API_KEY")
+
+# LLM Provider Configuration
+LLM_PROVIDER = _get_config("LLM_PROVIDER", "anthropic")  # "anthropic" or "openai"
+OPENAI_BASE_URL = _get_config("OPENAI_BASE_URL")  # For OpenAI-compatible endpoints
 
 # Model Configuration
 # SLOW_MODEL: For complex tasks requiring deep reasoning (tutoring, analysis)
@@ -70,8 +75,19 @@ Remember: You're helping them learn to think, not just get the right answer."""
 
 def validate_config():
     """Validate that required configuration is present."""
-    if not ANTHROPIC_API_KEY:
+    if LLM_PROVIDER == "anthropic":
+        if not ANTHROPIC_API_KEY:
+            raise ValueError(
+                "ANTHROPIC_API_KEY not found. Please copy .env.example to .env and add your API key."
+            )
+    elif LLM_PROVIDER == "openai":
+        # For local endpoints, API key might not be needed
+        if not OPENAI_BASE_URL and not OPENAI_API_KEY:
+            raise ValueError(
+                "OPENAI_API_KEY not found. Please set OPENAI_API_KEY in .env or use OPENAI_BASE_URL for local endpoints."
+            )
+    else:
         raise ValueError(
-            "ANTHROPIC_API_KEY not found. Please copy .env.example to .env and add your API key."
+            f"Unknown LLM_PROVIDER: {LLM_PROVIDER}. Supported values: 'anthropic', 'openai'"
         )
     return True

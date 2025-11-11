@@ -1,21 +1,35 @@
 """Core AI tutoring logic for Ensina AI."""
 from typing import List, Dict, Optional
 import re
-from anthropic import Anthropic
-from src.config import ANTHROPIC_API_KEY, SLOW_MODEL, FAST_MODEL, TUTOR_SYSTEM_PROMPT
+from src.config import (
+    LLM_PROVIDER, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENAI_BASE_URL,
+    SLOW_MODEL, FAST_MODEL, TUTOR_SYSTEM_PROMPT
+)
 from src.storage import Storage, Student, LearningIndicators
+from src.llm import create_llm_provider
 
 
 class MathTutor:
-    """AI-powered math tutor using Claude with Socratic method."""
+    """AI-powered math tutor using LLM with Socratic method."""
 
     def __init__(self, storage: Storage):
-        """Initialize tutor with Claude client and storage."""
-        self.client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        """Initialize tutor with LLM provider and storage."""
         self.storage = storage
-        self.slow_model = SLOW_MODEL  # For tutoring, analysis, summaries
-        self.fast_model = FAST_MODEL  # For guardrails, quick checks
-        self.model = SLOW_MODEL  # Legacy compatibility
+
+        # Create LLM provider based on configuration
+        self.llm = create_llm_provider(
+            provider_type=LLM_PROVIDER,
+            anthropic_api_key=ANTHROPIC_API_KEY,
+            openai_api_key=OPENAI_API_KEY,
+            openai_base_url=OPENAI_BASE_URL,
+            slow_model=SLOW_MODEL,
+            fast_model=FAST_MODEL
+        )
+
+        # Legacy compatibility
+        self.slow_model = self.llm.slow_model
+        self.fast_model = self.llm.fast_model
+        self.model = self.llm.slow_model
 
     def _build_system_prompt(self, student: Student) -> str:
         """Build personalized system prompt based on student info."""
@@ -42,20 +56,18 @@ class MathTutor:
         Returns:
             Tutor's response
         """
-        # Build messages for Claude API
+        # Build messages for LLM
         messages = conversation_history + [
             {"role": "user", "content": new_message}
         ]
 
-        # Get response from Claude using slow model for quality tutoring
-        response = self.client.messages.create(
-            model=self.slow_model,
-            max_tokens=1024,
+        # Get response using slow model for quality tutoring
+        return self.llm.chat(
+            messages=messages,
             system=self._build_system_prompt(student),
-            messages=messages
+            max_tokens=1024,
+            model=self.llm.slow_model
         )
-
-        return response.content[0].text
 
     def get_response_sync(
         self,
@@ -74,20 +86,18 @@ class MathTutor:
         Returns:
             Tutor's response
         """
-        # Build messages for Claude API
+        # Build messages for LLM
         messages = conversation_history + [
             {"role": "user", "content": new_message}
         ]
 
-        # Get response from Claude using slow model for quality tutoring
-        response = self.client.messages.create(
-            model=self.slow_model,
-            max_tokens=1024,
+        # Get response using slow model for quality tutoring
+        return self.llm.chat(
+            messages=messages,
             system=self._build_system_prompt(student),
-            messages=messages
+            max_tokens=1024,
+            model=self.llm.slow_model
         )
-
-        return response.content[0].text
 
     def generate_session_summary(
         self,
@@ -129,13 +139,11 @@ TOPICS: [topic1, topic2, topic3]
 """
 
         # Use slow model for comprehensive session summary
-        response = self.client.messages.create(
-            model=self.slow_model,
+        summary_text = self.llm.chat(
+            messages=[{"role": "user", "content": summary_prompt}],
             max_tokens=512,
-            messages=[{"role": "user", "content": summary_prompt}]
+            model=self.llm.slow_model
         )
-
-        summary_text = response.content[0].text
 
         # Parse the response
         summary = ""
@@ -212,13 +220,11 @@ Be lenient with students trying to learn math."""
 
         try:
             # Use fast model for quick guardrail check
-            response = self.client.messages.create(
-                model=self.fast_model,
+            result_text = self.llm.chat(
+                messages=[{"role": "user", "content": check_prompt}],
                 max_tokens=50,
-                messages=[{"role": "user", "content": check_prompt}]
-            )
-
-            result_text = response.content[0].text.strip()
+                model=self.llm.fast_model
+            ).strip()
 
             if result_text.startswith("RELEVANT"):
                 return {
@@ -294,13 +300,11 @@ NEEDS_REVIEW: [YES or NO]
 """
 
         # Use slow model for detailed learning indicators analysis
-        response = self.client.messages.create(
-            model=self.slow_model,
+        analysis_text = self.llm.chat(
+            messages=[{"role": "user", "content": analysis_prompt}],
             max_tokens=512,
-            messages=[{"role": "user", "content": analysis_prompt}]
+            model=self.llm.slow_model
         )
-
-        analysis_text = response.content[0].text
 
         # Parse the response
         struggled_with = []
@@ -436,13 +440,11 @@ List specific subtopics as a comma-separated list (e.g., "adding fractions, comm
 SUBTOPICS:"""
 
         # Use fast model for simple subtopic extraction
-        response = self.client.messages.create(
-            model=self.fast_model,
+        subtopics_text = self.llm.chat(
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=100,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        subtopics_text = response.content[0].text.strip()
+            model=self.llm.fast_model
+        ).strip()
 
         # Parse comma-separated list
         subtopics = [s.strip() for s in subtopics_text.split(",") if s.strip()]

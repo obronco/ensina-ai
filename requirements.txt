@@ -1,5 +1,6 @@
 # Core dependencies
 anthropic>=0.39.0
+openai>=1.54.0
 streamlit>=1.39.0
 
 # Utilities

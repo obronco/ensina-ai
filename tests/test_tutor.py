@@ -13,8 +13,9 @@ class TestTutorInitialization:
         tutor = MathTutor(storage)
 
         assert tutor.storage == storage
-        assert tutor.client is not None
-        assert tutor.model is not None
+        assert tutor.llm is not None
+        assert tutor.slow_model is not None
+        assert tutor.fast_model is not None
 
 
 class TestTutorResponses:
@@ -36,11 +37,11 @@ class TestTutorResponses:
         # Verify response is returned
         assert response == "This is a mocked tutor response."
 
-        # Verify the API was called correctly
-        tutor_with_mock.client.messages.create.assert_called_once()
+        # Verify the LLM was called correctly
+        tutor_with_mock.llm.chat.assert_called_once()
 
         # Get the call arguments
-        call_args = tutor_with_mock.client.messages.create.call_args
+        call_args = tutor_with_mock.llm.chat.call_args
 
         # Verify messages were formatted correctly
         assert call_args.kwargs["messages"] == [
@@ -63,7 +64,7 @@ class TestTutorResponses:
             new_message=new_message
         )
 
-        call_args = tutor_with_mock.client.messages.create.call_args
+        call_args = tutor_with_mock.llm.chat.call_args
         system_prompt = call_args.kwargs["system"]
 
         # Verify student details are in system prompt
@@ -86,7 +87,7 @@ class TestTutorResponses:
             new_message="Message 5"
         )
 
-        call_args = tutor_with_mock.client.messages.create.call_args
+        call_args = tutor_with_mock.llm.chat.call_args
         messages = call_args.kwargs["messages"]
 
         # Should have all previous messages plus the new one
@@ -99,17 +100,17 @@ class TestTutorResponses:
         elementary = storage.create_student("Kid", 3, "parent@test.com")
         tutor_with_mock.get_response_sync(elementary, [], "Help me")
 
-        call_args_elem = tutor_with_mock.client.messages.create.call_args
+        call_args_elem = tutor_with_mock.llm.chat.call_args
         system_elem = call_args_elem.kwargs["system"]
 
         # Reset mock
-        tutor_with_mock.client.messages.create.reset_mock()
+        tutor_with_mock.llm.chat.reset_mock()
 
         # Test with high school student
         highschool = storage.create_student("Teen", 11, "parent@test.com")
         tutor_with_mock.get_response_sync(highschool, [], "Help me")
 
-        call_args_hs = tutor_with_mock.client.messages.create.call_args
+        call_args_hs = tutor_with_mock.llm.chat.call_args
         system_hs = call_args_hs.kwargs["system"]
 
         # Both should have grade level mentioned
@@ -123,12 +124,7 @@ class TestSessionSummaryGeneration:
     def test_generate_session_summary(self, tutor_with_mock, sample_student, sample_messages):
         """Test generating a summary from a conversation."""
         # Mock the summary response
-        mock_summary_response = MagicMock()
-        mock_summary_response.content = [MagicMock(
-            text="SUMMARY: Student practiced basic fraction concepts.\nTOPICS: fractions, addition"
-        )]
-
-        tutor_with_mock.client.messages.create.return_value = mock_summary_response
+        tutor_with_mock.llm.chat.return_value = "SUMMARY: Student practiced basic fraction concepts.\nTOPICS: fractions, addition"
 
         result = tutor_with_mock.generate_session_summary(
             student=sample_student,
@@ -153,16 +149,12 @@ class TestSessionSummaryGeneration:
             {"role": "assistant", "content": "Correct!"}
         ]
 
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(
-            text="SUMMARY: Student learned fraction addition.\nTOPICS: fractions, addition"
-        )]
-        tutor_with_mock.client.messages.create.return_value = mock_response
+        tutor_with_mock.llm.chat.return_value = "SUMMARY: Student learned fraction addition.\nTOPICS: fractions, addition"
 
         tutor_with_mock.generate_session_summary(sample_student, messages)
 
         # Verify the API was called
-        call_args = tutor_with_mock.client.messages.create.call_args
+        call_args = tutor_with_mock.llm.chat.call_args
         prompt = call_args.kwargs["messages"][0]["content"]
 
         # The prompt should include the conversation
@@ -172,11 +164,7 @@ class TestSessionSummaryGeneration:
     def test_summary_handles_malformed_response(self, tutor_with_mock, sample_student):
         """Test that summary generation handles unexpected response formats."""
         # Mock a response without the expected format
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(
-            text="Just some random text without proper formatting"
-        )]
-        tutor_with_mock.client.messages.create.return_value = mock_response
+        tutor_with_mock.llm.chat.return_value = "Just some random text without proper formatting"
 
         result = tutor_with_mock.generate_session_summary(
             student=sample_student,
@@ -195,11 +183,7 @@ class TestSessionSummaryGeneration:
         """Test summary generation with minimal conversation."""
         messages = [{"role": "user", "content": "Hi"}]
 
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(
-            text="SUMMARY: Brief greeting.\nTOPICS: greeting"
-        )]
-        tutor_with_mock.client.messages.create.return_value = mock_response
+        tutor_with_mock.llm.chat.return_value = "SUMMARY: Brief greeting.\nTOPICS: greeting"
 
         result = tutor_with_mock.generate_session_summary(sample_student, messages)
 
@@ -243,31 +227,21 @@ class TestInitialGreeting:
 class TestTutorConfiguration:
     """Test tutor configuration and model settings."""
 
-    def test_tutor_uses_configured_model(self, storage, mock_anthropic_client):
+    def test_tutor_uses_configured_model(self, tutor_with_mock, sample_student):
         """Test that tutor uses the configured model."""
-        tutor = MathTutor(storage)
-        tutor.client = mock_anthropic_client
+        tutor_with_mock.get_response_sync(sample_student, [], "test message")
 
-        student = storage.create_student("Test", 5, "test@test.com")
-
-        tutor.get_response_sync(student, [], "test message")
-
-        call_args = mock_anthropic_client.messages.create.call_args
+        call_args = tutor_with_mock.llm.chat.call_args
 
         # Should use the model from config
         assert "model" in call_args.kwargs
         assert "claude" in call_args.kwargs["model"].lower()
 
-    def test_tutor_sets_reasonable_max_tokens(self, storage, mock_anthropic_client):
+    def test_tutor_sets_reasonable_max_tokens(self, tutor_with_mock, sample_student):
         """Test that tutor sets appropriate token limits."""
-        tutor = MathTutor(storage)
-        tutor.client = mock_anthropic_client
+        tutor_with_mock.get_response_sync(sample_student, [], "test message")
 
-        student = storage.create_student("Test", 5, "test@test.com")
-
-        tutor.get_response_sync(student, [], "test message")
-
-        call_args = mock_anthropic_client.messages.create.call_args
+        call_args = tutor_with_mock.llm.chat.call_args
 
         # Should have a max_tokens parameter
         assert "max_tokens" in call_args.kwargs
@@ -281,7 +255,7 @@ class TestErrorHandling:
     def test_api_error_propagates(self, tutor_with_mock, sample_student):
         """Test that API errors are propagated appropriately."""
         # Make the mock raise an exception
-        tutor_with_mock.client.messages.create.side_effect = Exception("API Error")
+        tutor_with_mock.llm.chat.side_effect = Exception("API Error")
 
         with pytest.raises(Exception) as exc_info:
             tutor_with_mock.get_response_sync(
@@ -305,7 +279,7 @@ class TestBusinessLogic:
 
         tutor_with_mock.get_response_sync(sample_student, history, "New message")
 
-        call_args = tutor_with_mock.client.messages.create.call_args
+        call_args = tutor_with_mock.llm.chat.call_args
         messages = call_args.kwargs["messages"]
 
         # Should have exactly 3 messages
@@ -331,7 +305,7 @@ class TestBusinessLogic:
 
         assert response is not None
 
-        call_args = tutor_with_mock.client.messages.create.call_args
+        call_args = tutor_with_mock.llm.chat.call_args
         messages = call_args.kwargs["messages"]
 
         # Should just have the new message
@@ -357,7 +331,7 @@ class TestBusinessLogic:
         for response_text, expected_summary, expected_topics in test_cases:
             mock_response = MagicMock()
             mock_response.content = [MagicMock(text=response_text)]
-            tutor_with_mock.client.messages.create.return_value = mock_response
+            tutor_with_mock.llm.chat.return_value = mock_response.content[0].text
 
             result = tutor_with_mock.generate_session_summary(
                 sample_student,
@@ -474,18 +448,18 @@ class TestEnhancedSessionSummary:
         # Mock responses for all the API calls
         mock_responses = [
             # Basic summary
-            MagicMock(content=[MagicMock(text="SUMMARY: Student learned fractions.\nTOPICS: fractions")]),
+            "SUMMARY: Student learned fractions.\nTOPICS: fractions",
             # Subtopics
-            MagicMock(content=[MagicMock(text="adding fractions, simplifying fractions")]),
+            "adding fractions, simplifying fractions",
             # Learning indicators
-            MagicMock(content=[MagicMock(text="""STRUGGLED_WITH: [common denominators]
+            """STRUGGLED_WITH: [common denominators]
 MASTERED: [basic fractions]
 MISCONCEPTIONS: [adding numerators and denominators]
 BREAKTHROUGH_MOMENTS: [understood the concept]
-NEEDS_REVIEW: YES""")]),
+NEEDS_REVIEW: YES""",
         ]
 
-        tutor_with_mock.client.messages.create.side_effect = mock_responses
+        tutor_with_mock.llm.chat.side_effect = mock_responses
 
         result = tutor_with_mock.generate_enhanced_session_summary(sample_student, sample_messages)
 
@@ -507,16 +481,16 @@ NEEDS_REVIEW: YES""")]),
     def test_enhanced_summary_includes_basic_fields(self, tutor_with_mock, sample_student, sample_messages):
         """Test that enhanced summary includes original basic summary fields."""
         mock_responses = [
-            MagicMock(content=[MagicMock(text="SUMMARY: Test summary.\nTOPICS: test topics")]),
-            MagicMock(content=[MagicMock(text="subtopic1, subtopic2")]),
-            MagicMock(content=[MagicMock(text="""STRUGGLED_WITH: []
+            "SUMMARY: Test summary.\nTOPICS: test topics",
+            "subtopic1, subtopic2",
+            """STRUGGLED_WITH: []
 MASTERED: []
 MISCONCEPTIONS: []
 BREAKTHROUGH_MOMENTS: []
-NEEDS_REVIEW: NO""")]),
+NEEDS_REVIEW: NO""",
         ]
 
-        tutor_with_mock.client.messages.create.side_effect = mock_responses
+        tutor_with_mock.llm.chat.side_effect = mock_responses
 
         result = tutor_with_mock.generate_enhanced_session_summary(sample_student, sample_messages)
 
@@ -540,33 +514,29 @@ class TestTopicRelevanceGuardrail:
             result = tutor_with_mock.check_topic_relevance(sample_student, greeting)
             assert result["is_relevant"] is True
 
-    def test_math_message_relevant(self, tutor_with_mock, mock_anthropic_client, sample_student):
+    def test_math_message_relevant(self, tutor_with_mock, sample_student):
         """Math-related messages should be marked as relevant."""
-        # Mock Claude to respond with RELEVANT
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="RELEVANT")]
-        mock_anthropic_client.messages.create.return_value = mock_response
+        # Mock LLM to respond with RELEVANT
+        tutor_with_mock.llm.chat.return_value = "RELEVANT"
 
         result = tutor_with_mock.check_topic_relevance(sample_student, "Can you help me with fractions?")
         assert result["is_relevant"] is True
         assert result["suggested_response"] is None
 
-    def test_off_topic_message_flagged(self, tutor_with_mock, mock_anthropic_client, sample_student):
+    def test_off_topic_message_flagged(self, tutor_with_mock, sample_student):
         """Off-topic messages should be flagged."""
-        # Mock Claude to respond with OFF_TOPIC
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="OFF_TOPIC: Not related to math")]
-        mock_anthropic_client.messages.create.return_value = mock_response
+        # Mock LLM to respond with OFF_TOPIC
+        tutor_with_mock.llm.chat.return_value = "OFF_TOPIC: Not related to math"
 
         result = tutor_with_mock.check_topic_relevance(sample_student, "What's the weather today?")
         assert result["is_relevant"] is False
         assert "math" in result["suggested_response"].lower()
         assert sample_student.name in result["suggested_response"]
 
-    def test_guardrail_fails_open(self, tutor_with_mock, mock_anthropic_client, sample_student):
+    def test_guardrail_fails_open(self, tutor_with_mock, sample_student):
         """If guardrail check fails, should allow message (fail open)."""
         # Mock API failure
-        mock_anthropic_client.messages.create.side_effect = Exception("API Error")
+        tutor_with_mock.llm.chat.side_effect = Exception("API Error")
 
         result = tutor_with_mock.check_topic_relevance(sample_student, "Can you help with history?")
         assert result["is_relevant"] is True  # Fail open
@@ -591,7 +561,7 @@ MISCONCEPTIONS: [thought fractions were whole numbers]
 BREAKTHROUGH_MOMENTS: [Oh! Now I get it!]
 NEEDS_REVIEW: NO""")])
 
-        tutor_with_mock.client.messages.create.return_value = mock_response
+        tutor_with_mock.llm.chat.return_value = mock_response.content[0].text
 
         indicators = tutor_with_mock.analyze_learning_indicators(sample_student, messages)
 
@@ -609,7 +579,7 @@ NEEDS_REVIEW: NO""")])
 
         # Mock the API response
         mock_response = MagicMock(content=[MagicMock(text="adding fractions, common denominators, simplifying")])
-        tutor_with_mock.client.messages.create.return_value = mock_response
+        tutor_with_mock.llm.chat.return_value = mock_response.content[0].text
 
         subtopics = tutor_with_mock.extract_subtopics(sample_student, messages, "fractions")
 

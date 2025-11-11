@@ -1,10 +1,27 @@
 """Pytest configuration and fixtures."""
 import pytest
 import tempfile
+import os
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 from src.storage import Storage, Student, LearningIndicators
 from src.tutor import MathTutor
+
+
+@pytest.fixture(autouse=True)
+def mock_llm_factory(monkeypatch):
+    """Mock the create_llm_provider factory for all tests."""
+    # Create a mock provider
+    mock_provider = Mock()
+    mock_provider.chat.return_value = "This is a mocked tutor response."
+    mock_provider.slow_model = "claude-3-5-sonnet-20241022"
+    mock_provider.fast_model = "claude-3-5-haiku-20241022"
+
+    # Patch where it's imported in tutor.py
+    import src.tutor
+    monkeypatch.setattr(src.tutor, "create_llm_provider", lambda **kwargs: mock_provider)
+
+    return mock_provider
 
 
 @pytest.fixture
@@ -50,6 +67,21 @@ def sample_messages():
 
 
 @pytest.fixture
+def mock_llm_provider():
+    """Mock LLM provider for testing without API calls."""
+    mock_provider = Mock()
+
+    # Mock the chat method
+    mock_provider.chat.return_value = "This is a mocked tutor response."
+
+    # Set model attributes
+    mock_provider.slow_model = "claude-3-5-sonnet-20241022"
+    mock_provider.fast_model = "claude-3-5-haiku-20241022"
+
+    return mock_provider
+
+
+@pytest.fixture
 def mock_anthropic_client():
     """Mock Anthropic client for testing without API calls."""
     mock_client = Mock()
@@ -76,11 +108,8 @@ def sample_learning_indicators():
 
 
 @pytest.fixture
-def tutor_with_mock(storage, mock_anthropic_client, monkeypatch):
-    """Create a MathTutor with mocked Anthropic client."""
+def tutor_with_mock(storage):
+    """Create a MathTutor with mocked LLM provider."""
+    # The autouse mock_llm_factory fixture ensures the factory returns a mock
     tutor = MathTutor(storage)
-
-    # Replace the real client with our mock
-    tutor.client = mock_anthropic_client
-
     return tutor
