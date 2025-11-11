@@ -39,7 +39,7 @@ tutor = get_tutor()
 st.sidebar.title("🎓 " + APP_NAME)
 page = st.sidebar.radio(
     "Navigate",
-    ["👨‍🎓 Student", "👨‍👩‍👧 Parent Dashboard", "⚙️ Setup"]
+    ["👨‍🎓 Student", "👨‍👩‍👧 Parent Dashboard", "👨‍🏫 Teacher View", "⚙️ Setup"]
 )
 
 st.sidebar.markdown("---")
@@ -72,6 +72,49 @@ if page == "👨‍🎓 Student":
 
     st.markdown(f"### Hello, {student.name}! 👋")
     st.markdown(f"*Grade {student.grade_level}*")
+
+    # Assignment selection (optional)
+    st.markdown("---")
+    assignments = storage.list_assignments(grade_level=student.grade_level)
+
+    if assignments:
+        st.markdown("### 📝 Available Assignments")
+
+        # Check if student already has a submission for any assignment
+        assignment_options = {}
+        for assignment in assignments:
+            submission = storage.get_student_submission(assignment.id, student.id)
+            status = "✅ Completed" if submission else "📌 Open"
+            assignment_options[f"{status} - {assignment.title}"] = assignment.id
+
+        if assignment_options:
+            selected_assignment_label = st.selectbox(
+                "Select an assignment (or choose 'Free Practice' below)",
+                ["-- Free Practice --"] + list(assignment_options.keys())
+            )
+
+            if selected_assignment_label != "-- Free Practice --":
+                assignment_id = assignment_options[selected_assignment_label]
+                assignment = storage.get_assignment(assignment_id)
+
+                # Show assignment details
+                with st.expander("📋 Assignment Details", expanded=True):
+                    st.markdown(f"**{assignment.title}**")
+                    st.markdown(f"{assignment.description}")
+                    st.markdown(f"*Topics: {assignment.topics}*")
+                    if assignment.due_date:
+                        st.markdown(f"*Due: {assignment.due_date[:10]}*")
+
+                # Store assignment in session state
+                st.session_state.current_assignment_id = assignment_id
+            else:
+                st.session_state.current_assignment_id = None
+        else:
+            st.session_state.current_assignment_id = None
+    else:
+        st.session_state.current_assignment_id = None
+
+    st.markdown("---")
 
     # Initialize session state
     if "messages" not in st.session_state:
@@ -190,7 +233,7 @@ if page == "👨‍🎓 Student":
                     summary_data = tutor.generate_enhanced_session_summary(student, on_topic_messages)
 
                     # Save to database with full analytics
-                    storage.create_session(
+                    session = storage.create_session(
                         student_id=student.id,
                         messages=on_topic_messages,
                         summary=summary_data["summary"],
@@ -203,7 +246,23 @@ if page == "👨‍🎓 Student":
                         questions_asked=summary_data["questions_asked"]
                     )
 
-                    st.success("✅ Session saved!")
+                    # If working on an assignment, create a submission
+                    if hasattr(st.session_state, 'current_assignment_id') and st.session_state.current_assignment_id:
+                        try:
+                            storage.create_submission(
+                                assignment_id=st.session_state.current_assignment_id,
+                                student_id=student.id,
+                                session_id=session.id
+                            )
+                            st.success("✅ Session saved and assignment submitted!")
+                        except Exception as e:
+                            # Handle duplicate submission (student already submitted this assignment)
+                            if "UNIQUE constraint failed" in str(e):
+                                st.success("✅ Session saved! (Assignment was already submitted)")
+                            else:
+                                st.error(f"Session saved but submission failed: {e}")
+                    else:
+                        st.success("✅ Session saved!")
 
             # Reset conversation
             st.session_state.messages = []
@@ -381,6 +440,245 @@ elif page == "👨‍👩‍👧 Parent Dashboard":
             st.markdown("---")
 
 # ============================================================================
+# TEACHER VIEW PAGE
+# ============================================================================
+elif page == "👨‍🏫 Teacher View":
+    st.title("👨‍🏫 Teacher View")
+
+    # Teacher selection
+    teachers = storage.list_teachers()
+
+    if not teachers:
+        st.warning("No teachers found. Please add a teacher in the Setup page first.")
+
+        # Quick add teacher form
+        st.markdown("### ➕ Add Teacher")
+        with st.form("add_teacher_quick"):
+            teacher_name = st.text_input("Name", placeholder="Ms. Smith")
+            teacher_email = st.text_input("Email", placeholder="teacher@school.com")
+            teacher_school = st.text_input("School (optional)", placeholder="Lincoln Elementary")
+
+            if st.form_submit_button("Add Teacher"):
+                if teacher_name and teacher_email:
+                    storage.create_teacher(teacher_name, teacher_email, teacher_school or None)
+                    st.success(f"Added {teacher_name}!")
+                    st.rerun()
+                else:
+                    st.error("Please provide name and email")
+        st.stop()
+
+    # Select teacher
+    teacher_options = {f"{t.name} ({t.email})": t.id for t in teachers}
+    selected_teacher_name = st.selectbox("Select Teacher", list(teacher_options.keys()))
+    teacher_id = teacher_options[selected_teacher_name]
+    teacher = storage.get_teacher(teacher_id)
+
+    st.markdown(f"**School:** {teacher.school or 'Not specified'}")
+    st.markdown("---")
+
+    # Tabs for different teacher functions
+    tab1, tab2, tab3 = st.tabs(["📝 My Assignments", "➕ Create Assignment", "📊 Review Submissions"])
+
+    # TAB 1: View Assignments
+    with tab1:
+        st.markdown("### My Assignments")
+
+        assignments = storage.list_assignments(teacher_id=teacher_id)
+
+        if not assignments:
+            st.info("No assignments created yet. Use the 'Create Assignment' tab to get started.")
+        else:
+            for assignment in assignments:
+                # Get submission count
+                submissions = storage.get_submissions(assignment.id)
+                unreviewed = sum(1 for s in submissions if not s.teacher_reviewed)
+
+                with st.expander(
+                    f"**{assignment.title}** - Grade {assignment.grade_level} "
+                    f"({len(submissions)} submissions, {unreviewed} unreviewed)"
+                ):
+                    st.markdown(f"**Description:** {assignment.description}")
+                    st.markdown(f"**Topics:** {assignment.topics}")
+                    st.markdown(f"**Created:** {assignment.created_at[:16]}")
+                    if assignment.due_date:
+                        st.markdown(f"**Due:** {assignment.due_date[:16]}")
+
+                    if submissions:
+                        st.markdown(f"**Submissions:** {len(submissions)}")
+                        if st.button(f"Review Submissions", key=f"review_{assignment.id}"):
+                            st.session_state.review_assignment_id = assignment.id
+                            st.rerun()
+
+    # TAB 2: Create Assignment
+    with tab2:
+        st.markdown("### Create New Assignment")
+
+        with st.form("create_assignment"):
+            title = st.text_input("Assignment Title", placeholder="Solving Linear Equations")
+            description = st.text_area(
+                "Description/Problem Statement",
+                placeholder="Solve the following equation for x: 2x + 5 = 13",
+                height=150
+            )
+            grade_level = st.number_input("Grade Level", min_value=1, max_value=12, value=8)
+            topics = st.text_input("Topics (comma-separated)", placeholder="algebra, linear equations")
+            due_date = st.date_input("Due Date (optional)")
+
+            if st.form_submit_button("Create Assignment"):
+                if title and description and topics:
+                    due_date_str = due_date.strftime("%Y-%m-%d") if due_date else None
+                    assignment = storage.create_assignment(
+                        teacher_id=teacher_id,
+                        title=title,
+                        description=description,
+                        grade_level=grade_level,
+                        topics=topics,
+                        due_date=due_date_str
+                    )
+                    st.success(f"✅ Created assignment: {assignment.title}")
+                    st.rerun()
+                else:
+                    st.error("Please fill in all required fields")
+
+    # TAB 3: Review Submissions
+    with tab3:
+        st.markdown("### Review Student Submissions")
+
+        # Check if we're reviewing a specific assignment
+        if "review_assignment_id" in st.session_state:
+            assignment_id = st.session_state.review_assignment_id
+            assignment = storage.get_assignment(assignment_id)
+
+            st.markdown(f"## {assignment.title}")
+            st.markdown(f"*{assignment.description}*")
+            st.markdown("---")
+
+            if st.button("← Back to Assignments"):
+                del st.session_state.review_assignment_id
+                st.rerun()
+
+            # Get all submissions
+            submissions = storage.get_submissions(assignment_id)
+
+            if not submissions:
+                st.info("No submissions yet for this assignment.")
+            else:
+                for submission in submissions:
+                    student = storage.get_student(submission.student_id)
+                    session = storage.get_session(submission.session_id)
+
+                    status = "✅ Reviewed" if submission.teacher_reviewed else "🔴 Needs Review"
+
+                    with st.expander(
+                        f"{status} - {student.name} (Grade {student.grade_level}) - "
+                        f"Submitted {submission.submitted_at[:16]}"
+                    ):
+                        # Show session analytics
+                        col1, col2, col3, col4 = st.columns(4)
+
+                        with col1:
+                            duration = session.duration_minutes or 0
+                            st.metric("Time Spent", f"{duration} min")
+
+                        with col2:
+                            confidence = session.student_confidence or 0
+                            confidence_pct = int(confidence * 100)
+                            emoji = "😊" if confidence > 0.7 else "😐" if confidence > 0.4 else "😰"
+                            st.metric("Confidence", f"{confidence_pct}% {emoji}")
+
+                        with col3:
+                            questions = session.questions_asked or 0
+                            st.metric("Questions Asked", questions)
+
+                        with col4:
+                            difficulty = session.difficulty_level or 0
+                            st.metric("Difficulty", f"{difficulty}/10")
+
+                        # Show conversation
+                        st.markdown("#### Conversation Transcript")
+                        with st.container():
+                            for msg in session.messages:
+                                role = msg["role"]
+                                content = msg["content"]
+                                if role == "user":
+                                    st.markdown(f"**Student:** {content}")
+                                else:
+                                    st.markdown(f"*AI Tutor:* {content}")
+                                st.markdown("")
+
+                        # Show learning indicators
+                        if session.learning_indicators:
+                            st.markdown("#### Learning Analytics")
+                            indicators = session.learning_indicators
+
+                            if indicators.mastered:
+                                st.markdown("**✅ Mastered:**")
+                                for item in indicators.mastered:
+                                    st.markdown(f"- {item}")
+
+                            if indicators.struggled_with:
+                                st.markdown("**⚠️ Struggled With:**")
+                                for item in indicators.struggled_with:
+                                    st.markdown(f"- {item}")
+
+                            if indicators.misconceptions:
+                                st.markdown("**❌ Misconceptions:**")
+                                for item in indicators.misconceptions:
+                                    st.markdown(f"- {item}")
+
+                            if indicators.breakthrough_moments:
+                                st.markdown("**💡 Breakthrough Moments:**")
+                                for item in indicators.breakthrough_moments:
+                                    st.markdown(f"- {item}")
+
+                        # Teacher review section
+                        st.markdown("---")
+                        st.markdown("#### Teacher Review")
+
+                        if submission.teacher_reviewed:
+                            st.info(f"**Your Notes:** {submission.teacher_notes}")
+                            if st.button("Edit Review", key=f"edit_{submission.id}"):
+                                st.session_state[f"editing_{submission.id}"] = True
+                                st.rerun()
+
+                        if not submission.teacher_reviewed or st.session_state.get(f"editing_{submission.id}", False):
+                            with st.form(f"review_{submission.id}"):
+                                notes = st.text_area(
+                                    "Teacher Notes",
+                                    value=submission.teacher_notes or "",
+                                    placeholder="Student showed good understanding of linear equations. "
+                                    "Recommend more practice with multi-step problems.",
+                                    height=100
+                                )
+
+                                if st.form_submit_button("Save Review"):
+                                    storage.update_submission_review(submission.id, notes)
+                                    st.success("Review saved!")
+                                    if f"editing_{submission.id}" in st.session_state:
+                                        del st.session_state[f"editing_{submission.id}"]
+                                    st.rerun()
+        else:
+            # Show all assignments
+            assignments = storage.list_assignments(teacher_id=teacher_id)
+
+            if not assignments:
+                st.info("No assignments created yet.")
+            else:
+                st.markdown("Select an assignment to review submissions:")
+
+                for assignment in assignments:
+                    submissions = storage.get_submissions(assignment.id)
+                    unreviewed = sum(1 for s in submissions if not s.teacher_reviewed)
+
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"**{assignment.title}** - {len(submissions)} submissions, {unreviewed} unreviewed")
+                    with col2:
+                        if st.button("Review →", key=f"select_{assignment.id}"):
+                            st.session_state.review_assignment_id = assignment.id
+                            st.rerun()
+
+# ============================================================================
 # SETUP PAGE
 # ============================================================================
 elif page == "⚙️ Setup":
@@ -414,6 +712,37 @@ elif page == "⚙️ Setup":
             else:
                 student = storage.create_student(name, grade, email)
                 st.success(f"✅ Added {student.name}!")
+                st.rerun()
+
+    # Teachers section
+    st.markdown("---")
+    st.markdown("### 👨‍🏫 Teachers")
+    teachers = storage.list_teachers()
+
+    if teachers:
+        for teacher in teachers:
+            with st.expander(f"{teacher.name} - {teacher.email}"):
+                st.markdown(f"**School:** {teacher.school or 'Not specified'}")
+                st.markdown(f"**Created:** {teacher.created_at}")
+    else:
+        st.info("No teachers added yet.")
+
+    # Add new teacher
+    st.markdown("### ➕ Add New Teacher")
+
+    with st.form("add_teacher"):
+        teacher_name = st.text_input("Teacher Name", placeholder="Ms. Smith")
+        teacher_email = st.text_input("Teacher Email", placeholder="teacher@school.com")
+        teacher_school = st.text_input("School (optional)", placeholder="Lincoln Elementary")
+
+        submitted_teacher = st.form_submit_button("Add Teacher")
+
+        if submitted_teacher:
+            if not teacher_name or not teacher_email:
+                st.error("Please fill in name and email.")
+            else:
+                teacher = storage.create_teacher(teacher_name, teacher_email, teacher_school or None)
+                st.success(f"✅ Added {teacher.name}!")
                 st.rerun()
 
     # Configuration info

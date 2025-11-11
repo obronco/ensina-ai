@@ -67,6 +67,41 @@ class Incident:
     resolved: bool = False  # Whether parent has acknowledged
 
 
+@dataclass
+class Teacher:
+    """Teacher model."""
+    id: Optional[int]
+    name: str
+    email: str
+    school: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+@dataclass
+class Assignment:
+    """Assignment created by teacher."""
+    id: Optional[int]
+    teacher_id: int
+    title: str
+    description: str
+    grade_level: int
+    topics: str  # Comma-separated expected topics
+    created_at: Optional[str] = None
+    due_date: Optional[str] = None
+
+
+@dataclass
+class Submission:
+    """Student submission of an assignment."""
+    id: Optional[int]
+    assignment_id: int
+    student_id: int
+    session_id: int  # Links to the tutoring session
+    submitted_at: str
+    teacher_reviewed: bool = False
+    teacher_notes: Optional[str] = None
+
+
 class Storage:
     """SQLite storage with clean abstraction for future migration."""
 
@@ -139,6 +174,49 @@ class Storage:
                 resolved BOOLEAN DEFAULT 0,
                 FOREIGN KEY (student_id) REFERENCES students(id),
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+        """)
+
+        # Teachers table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS teachers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                school TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Assignments table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                grade_level INTEGER NOT NULL,
+                topics TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                due_date TIMESTAMP,
+                FOREIGN KEY (teacher_id) REFERENCES teachers(id)
+            )
+        """)
+
+        # Submissions table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                assignment_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                session_id INTEGER NOT NULL,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                teacher_reviewed BOOLEAN DEFAULT 0,
+                teacher_notes TEXT,
+                FOREIGN KEY (assignment_id) REFERENCES assignments(id),
+                FOREIGN KEY (student_id) REFERENCES students(id),
+                FOREIGN KEY (session_id) REFERENCES sessions(id),
+                UNIQUE(assignment_id, student_id)
             )
         """)
 
@@ -620,3 +698,271 @@ class Storage:
         conn.close()
 
         return row["count"] if row else 0
+
+    # ===== Teacher Operations =====
+
+    def create_teacher(self, name: str, email: str, school: Optional[str] = None) -> Teacher:
+        """Create a new teacher."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "INSERT INTO teachers (name, email, school) VALUES (?, ?, ?)",
+            (name, email, school)
+        )
+
+        teacher_id = cursor.lastrowid
+        conn.commit()
+
+        # Get the created teacher
+        cursor.execute("SELECT * FROM teachers WHERE id = ?", (teacher_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return Teacher(
+            id=row["id"],
+            name=row["name"],
+            email=row["email"],
+            school=row["school"],
+            created_at=row["created_at"]
+        )
+
+    def get_teacher(self, teacher_id: int) -> Optional[Teacher]:
+        """Get a teacher by ID."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM teachers WHERE id = ?", (teacher_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        return Teacher(
+            id=row["id"],
+            name=row["name"],
+            email=row["email"],
+            school=row["school"],
+            created_at=row["created_at"]
+        )
+
+    def list_teachers(self) -> List[Teacher]:
+        """List all teachers."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM teachers ORDER BY name")
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            Teacher(
+                id=row["id"],
+                name=row["name"],
+                email=row["email"],
+                school=row["school"],
+                created_at=row["created_at"]
+            )
+            for row in rows
+        ]
+
+    # ===== Assignment Operations =====
+
+    def create_assignment(
+        self,
+        teacher_id: int,
+        title: str,
+        description: str,
+        grade_level: int,
+        topics: str,
+        due_date: Optional[str] = None
+    ) -> Assignment:
+        """Create a new assignment."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """INSERT INTO assignments
+               (teacher_id, title, description, grade_level, topics, due_date)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (teacher_id, title, description, grade_level, topics, due_date)
+        )
+
+        assignment_id = cursor.lastrowid
+        conn.commit()
+
+        # Get the created assignment
+        cursor.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return Assignment(
+            id=row["id"],
+            teacher_id=row["teacher_id"],
+            title=row["title"],
+            description=row["description"],
+            grade_level=row["grade_level"],
+            topics=row["topics"],
+            created_at=row["created_at"],
+            due_date=row["due_date"]
+        )
+
+    def get_assignment(self, assignment_id: int) -> Optional[Assignment]:
+        """Get an assignment by ID."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        return Assignment(
+            id=row["id"],
+            teacher_id=row["teacher_id"],
+            title=row["title"],
+            description=row["description"],
+            grade_level=row["grade_level"],
+            topics=row["topics"],
+            created_at=row["created_at"],
+            due_date=row["due_date"]
+        )
+
+    def list_assignments(self, teacher_id: Optional[int] = None, grade_level: Optional[int] = None) -> List[Assignment]:
+        """List assignments, optionally filtered by teacher or grade level."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = "SELECT * FROM assignments WHERE 1=1"
+        params = []
+
+        if teacher_id:
+            query += " AND teacher_id = ?"
+            params.append(teacher_id)
+
+        if grade_level:
+            query += " AND grade_level = ?"
+            params.append(grade_level)
+
+        query += " ORDER BY created_at DESC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            Assignment(
+                id=row["id"],
+                teacher_id=row["teacher_id"],
+                title=row["title"],
+                description=row["description"],
+                grade_level=row["grade_level"],
+                topics=row["topics"],
+                created_at=row["created_at"],
+                due_date=row["due_date"]
+            )
+            for row in rows
+        ]
+
+    # ===== Submission Operations =====
+
+    def create_submission(
+        self,
+        assignment_id: int,
+        student_id: int,
+        session_id: int
+    ) -> Submission:
+        """Create a new submission (student completes assignment)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """INSERT INTO submissions
+               (assignment_id, student_id, session_id)
+               VALUES (?, ?, ?)""",
+            (assignment_id, student_id, session_id)
+        )
+
+        submission_id = cursor.lastrowid
+        conn.commit()
+
+        # Get the created submission
+        cursor.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return Submission(
+            id=row["id"],
+            assignment_id=row["assignment_id"],
+            student_id=row["student_id"],
+            session_id=row["session_id"],
+            submitted_at=row["submitted_at"],
+            teacher_reviewed=bool(row["teacher_reviewed"]),
+            teacher_notes=row["teacher_notes"]
+        )
+
+    def get_submissions(self, assignment_id: int) -> List[Submission]:
+        """Get all submissions for an assignment."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT * FROM submissions WHERE assignment_id = ? ORDER BY submitted_at DESC",
+            (assignment_id,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            Submission(
+                id=row["id"],
+                assignment_id=row["assignment_id"],
+                student_id=row["student_id"],
+                session_id=row["session_id"],
+                submitted_at=row["submitted_at"],
+                teacher_reviewed=bool(row["teacher_reviewed"]),
+                teacher_notes=row["teacher_notes"]
+            )
+            for row in rows
+        ]
+
+    def get_student_submission(self, assignment_id: int, student_id: int) -> Optional[Submission]:
+        """Get a specific student's submission for an assignment."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT * FROM submissions WHERE assignment_id = ? AND student_id = ?",
+            (assignment_id, student_id)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        return Submission(
+            id=row["id"],
+            assignment_id=row["assignment_id"],
+            student_id=row["student_id"],
+            session_id=row["session_id"],
+            submitted_at=row["submitted_at"],
+            teacher_reviewed=bool(row["teacher_reviewed"]),
+            teacher_notes=row["teacher_notes"]
+        )
+
+    def update_submission_review(self, submission_id: int, teacher_notes: str):
+        """Mark submission as reviewed and add teacher notes."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "UPDATE submissions SET teacher_reviewed = 1, teacher_notes = ? WHERE id = ?",
+            (teacher_notes, submission_id)
+        )
+
+        conn.commit()
+        conn.close()

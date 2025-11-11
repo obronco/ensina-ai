@@ -650,3 +650,191 @@ class TestIncidentOperations:
         """Test counting incidents when none exist."""
         count = storage.count_incidents(sample_student.id)
         assert count == 0
+
+
+class TestTeacherOperations:
+    """Test teacher CRUD operations."""
+
+    def test_create_teacher(self, storage):
+        """Test creating a teacher."""
+        teacher = storage.create_teacher(
+            name="Ms. Smith",
+            email="smith@school.com",
+            school="Lincoln Elementary"
+        )
+
+        assert teacher.id is not None
+        assert teacher.name == "Ms. Smith"
+        assert teacher.email == "smith@school.com"
+        assert teacher.school == "Lincoln Elementary"
+        assert teacher.created_at is not None
+
+    def test_get_teacher(self, storage):
+        """Test retrieving a teacher by ID."""
+        created = storage.create_teacher("Mr. Jones", "jones@school.com")
+        retrieved = storage.get_teacher(created.id)
+
+        assert retrieved is not None
+        assert retrieved.id == created.id
+        assert retrieved.name == "Mr. Jones"
+
+    def test_list_teachers(self, storage):
+        """Test listing all teachers."""
+        storage.create_teacher("Teacher 1", "t1@school.com")
+        storage.create_teacher("Teacher 2", "t2@school.com")
+
+        teachers = storage.list_teachers()
+
+        assert len(teachers) == 2
+        assert teachers[0].name == "Teacher 1"
+        assert teachers[1].name == "Teacher 2"
+
+
+class TestAssignmentOperations:
+    """Test assignment CRUD operations."""
+
+    def test_create_assignment(self, storage):
+        """Test creating an assignment."""
+        teacher = storage.create_teacher("Teacher", "teacher@school.com")
+
+        assignment = storage.create_assignment(
+            teacher_id=teacher.id,
+            title="Linear Equations",
+            description="Solve for x: 2x + 5 = 13",
+            grade_level=8,
+            topics="algebra, linear equations"
+        )
+
+        assert assignment.id is not None
+        assert assignment.teacher_id == teacher.id
+        assert assignment.title == "Linear Equations"
+        assert assignment.description == "Solve for x: 2x + 5 = 13"
+        assert assignment.grade_level == 8
+        assert assignment.topics == "algebra, linear equations"
+        assert assignment.created_at is not None
+
+    def test_get_assignment(self, storage):
+        """Test retrieving an assignment by ID."""
+        teacher = storage.create_teacher("Teacher", "teacher@school.com")
+        created = storage.create_assignment(
+            teacher_id=teacher.id,
+            title="Test Assignment",
+            description="Test description",
+            grade_level=5,
+            topics="fractions"
+        )
+
+        retrieved = storage.get_assignment(created.id)
+
+        assert retrieved is not None
+        assert retrieved.id == created.id
+        assert retrieved.title == "Test Assignment"
+
+    def test_list_assignments(self, storage):
+        """Test listing assignments."""
+        teacher = storage.create_teacher("Teacher", "teacher@school.com")
+
+        storage.create_assignment(teacher.id, "Assignment 1", "Desc 1", 5, "topic1")
+        storage.create_assignment(teacher.id, "Assignment 2", "Desc 2", 8, "topic2")
+
+        # List all
+        all_assignments = storage.list_assignments()
+        assert len(all_assignments) >= 2
+
+        # Filter by teacher
+        teacher_assignments = storage.list_assignments(teacher_id=teacher.id)
+        assert len(teacher_assignments) == 2
+
+        # Filter by grade level
+        grade5_assignments = storage.list_assignments(grade_level=5)
+        assert len(grade5_assignments) >= 1
+
+
+class TestSubmissionOperations:
+    """Test submission CRUD operations."""
+
+    def test_create_submission(self, storage, sample_student):
+        """Test creating a submission."""
+        teacher = storage.create_teacher("Teacher", "teacher@school.com")
+        assignment = storage.create_assignment(
+            teacher.id, "Assignment", "Description", 5, "math"
+        )
+
+        messages = [{"role": "user", "content": "Help with math"}]
+        session = storage.create_session(sample_student.id, messages, topics="math")
+
+        submission = storage.create_submission(
+            assignment_id=assignment.id,
+            student_id=sample_student.id,
+            session_id=session.id
+        )
+
+        assert submission.id is not None
+        assert submission.assignment_id == assignment.id
+        assert submission.student_id == sample_student.id
+        assert submission.session_id == session.id
+        assert submission.teacher_reviewed is False
+        assert submission.submitted_at is not None
+
+    def test_get_submissions(self, storage, sample_student):
+        """Test retrieving submissions for an assignment."""
+        teacher = storage.create_teacher("Teacher", "teacher@school.com")
+        assignment = storage.create_assignment(
+            teacher.id, "Assignment", "Description", 5, "math"
+        )
+
+        # Create two students and two sessions
+        student2 = storage.create_student("Student 2", 5, "parent2@test.com")
+
+        messages = [{"role": "user", "content": "test"}]
+        session1 = storage.create_session(sample_student.id, messages, topics="math")
+        session2 = storage.create_session(student2.id, messages, topics="math")
+
+        # Create two submissions
+        storage.create_submission(assignment.id, sample_student.id, session1.id)
+        storage.create_submission(assignment.id, student2.id, session2.id)
+
+        # Get submissions
+        submissions = storage.get_submissions(assignment.id)
+
+        assert len(submissions) == 2
+
+    def test_get_student_submission(self, storage, sample_student):
+        """Test retrieving a specific student's submission."""
+        teacher = storage.create_teacher("Teacher", "teacher@school.com")
+        assignment = storage.create_assignment(
+            teacher.id, "Assignment", "Description", 5, "math"
+        )
+
+        messages = [{"role": "user", "content": "test"}]
+        session = storage.create_session(sample_student.id, messages, topics="math")
+
+        created = storage.create_submission(assignment.id, sample_student.id, session.id)
+
+        # Get the specific submission
+        submission = storage.get_student_submission(assignment.id, sample_student.id)
+
+        assert submission is not None
+        assert submission.id == created.id
+
+    def test_update_submission_review(self, storage, sample_student):
+        """Test marking submission as reviewed."""
+        teacher = storage.create_teacher("Teacher", "teacher@school.com")
+        assignment = storage.create_assignment(
+            teacher.id, "Assignment", "Description", 5, "math"
+        )
+
+        messages = [{"role": "user", "content": "test"}]
+        session = storage.create_session(sample_student.id, messages, topics="math")
+
+        submission = storage.create_submission(assignment.id, sample_student.id, session.id)
+
+        assert submission.teacher_reviewed is False
+
+        # Update review
+        storage.update_submission_review(submission.id, "Great work!")
+
+        # Verify it was updated
+        updated = storage.get_student_submission(assignment.id, sample_student.id)
+        assert updated.teacher_reviewed is True
+        assert updated.teacher_notes == "Great work!"
