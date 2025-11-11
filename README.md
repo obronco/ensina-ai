@@ -4,12 +4,25 @@ An AI-powered math tutor that uses the Socratic method to help students learn th
 
 ## Features
 
+### For Students
 - **🤖 Socratic Tutoring**: AI instructor asks guiding questions instead of just giving answers
 - **👨‍🎓 Student Interface**: Clean chat interface for students to get math help
-- **👨‍👩‍👧 Parent Dashboard**: Review session summaries and track progress
-- **💾 Progress Tracking**: Automatic session saving with summaries and topics
+- **📝 Assignment Mode**: Complete teacher-assigned problems with full AI assistance
+- **🛡️ Content Guardrails**: Off-topic message detection keeps students focused on math
 - **🎯 Grade-Appropriate**: Tutor adapts language to student's grade level
-- **📊 Session Analytics**: Track time spent, topics covered, and learning progress
+
+### For Teachers
+- **👨‍🏫 Assignment Creation**: Create math problems and assign to students by grade level
+- **📊 Submission Review**: See complete conversation transcripts showing student thinking
+- **🔍 Engagement Analytics**: Time spent, questions asked, confidence level, difficulty
+- **💡 Learning Indicators**: Mastered concepts, struggles, misconceptions, breakthrough moments
+- **✍️ Teacher Feedback**: Add notes and mark submissions as reviewed
+
+### For Parents
+- **👨‍👩‍👧 Parent Dashboard**: Review session summaries and track progress
+- **⚠️ Incident Reports**: View off-topic message attempts with resolution tracking
+- **📈 Learning Analytics**: Confidence tracking, topics mastered, areas needing review
+- **💾 Progress Tracking**: Automatic session saving with detailed summaries
 
 ## Architecture
 
@@ -143,6 +156,23 @@ ensina-ai/
 - `parent_email`: Contact for reports
 - `created_at`: Timestamp
 
+### Teachers
+- `id`: Primary key
+- `name`: Teacher name
+- `email`: Unique email address
+- `school`: School name (optional)
+- `created_at`: Timestamp
+
+### Assignments
+- `id`: Primary key
+- `teacher_id`: Foreign key to teachers
+- `title`: Assignment title
+- `description`: Problem statement/description
+- `grade_level`: Target grade (1-12)
+- `topics`: Expected topics (comma-separated)
+- `created_at`: Timestamp
+- `due_date`: Optional deadline
+
 ### Sessions
 - `id`: Primary key
 - `student_id`: Foreign key to students
@@ -151,6 +181,30 @@ ensina-ai/
 - `summary`: AI-generated summary
 - `topics`: Comma-separated topics
 - `duration_minutes`: Session length
+- `subtopics`: Granular topic breakdown (JSON)
+- `difficulty_level`: 1-10 estimate
+- `student_confidence`: 0.0-1.0 confidence score
+- `learning_indicators`: Detailed learning signals (JSON)
+- `questions_asked`: Count of student questions
+
+### Submissions
+- `id`: Primary key
+- `assignment_id`: Foreign key to assignments
+- `student_id`: Foreign key to students
+- `session_id`: Foreign key to sessions
+- `submitted_at`: Timestamp
+- `teacher_reviewed`: Boolean flag
+- `teacher_notes`: Teacher feedback
+
+### Incidents
+- `id`: Primary key
+- `student_id`: Foreign key to students
+- `session_id`: Foreign key to sessions (optional)
+- `timestamp`: When incident occurred
+- `incident_type`: Type (e.g., "off_topic")
+- `message`: The flagged message
+- `reason`: Why it was flagged
+- `resolved`: Boolean (parent acknowledged)
 
 ### Progress
 - `student_id`: Foreign key to students
@@ -234,17 +288,26 @@ APP_NAME=Ensina AI
 
 ## Deployment
 
-### Local Use (Recommended for MVP)
+### Local Use
 ```bash
 streamlit run app.py
 ```
 
-### Streamlit Cloud (Free Hosting)
+### Streamlit Cloud (Public Hosting)
+
+**Quick Start:**
 1. Push your code to GitHub (excluding `.env`)
 2. Go to [share.streamlit.io](https://share.streamlit.io)
 3. Connect your repository
 4. Add `ANTHROPIC_API_KEY` to Secrets in Streamlit Cloud settings
 5. Deploy!
+
+**📖 Detailed Instructions**: See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete step-by-step guide including:
+- Setting up secrets
+- Database persistence considerations
+- Cost estimation
+- Production recommendations
+- Troubleshooting
 
 ## Cost Considerations
 
