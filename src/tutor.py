@@ -210,7 +210,7 @@ TOPICS: [topic1, topic2, topic3]
             - suggested_response: str (neutral warning if off-topic)
         """
         # Check for very short or greeting messages (always allow)
-        if len(message.strip()) < 5 or message.lower().strip() in ["hi", "hello", "hey", "thanks", "thank you", "bye"]:
+        if len(message.strip()) < 5 or message.lower().strip() in ["hi", "hello", "hey", "thanks", "thank you", "bye", "olá", "oi", "obrigado", "obrigada", "tchau"]:
             return {
                 "is_relevant": True,
                 "reason": "Greeting or polite message",
@@ -220,7 +220,7 @@ TOPICS: [topic1, topic2, topic3]
         # Use Claude to check topic relevance
         check_prompt = f"""You are a content filter for an educational math tutoring system for grade {student.grade_level} students.
 
-Determine if this message is related to math education or homework help.
+Determine if this message is appropriate for a math tutoring session.
 
 Student message: "{message}"
 
@@ -229,18 +229,23 @@ A message is RELEVANT if it:
 - Requests help with specific math topics
 - Asks for explanation of mathematical ideas
 - Discusses mathematical thinking or problem-solving
+- Requests language preference (Portuguese, English, etc.)
+- Asks how to use the system or for clarification
+- Requests different teaching approaches or explanations
+- Shows intent to learn or engage with math content
+- Meta-questions about learning or understanding
 
-A message is OFF-TOPIC if it:
-- Asks about non-math subjects
-- Contains personal conversations unrelated to learning
-- Requests help with non-academic topics
-- Attempts to discuss inappropriate content
+A message is OFF-TOPIC ONLY if it clearly:
+- Asks about completely unrelated subjects (history, sports, entertainment)
+- Contains social chitchat unrelated to learning
+- Requests non-academic assistance
+- Attempts inappropriate or harmful content
 
 Respond with ONLY one of:
 RELEVANT
 OFF_TOPIC: [brief reason why]
 
-Be lenient with students trying to learn math."""
+Be very lenient - if there's any educational intent, mark as RELEVANT."""
 
         try:
             # Use fast model for quick guardrail check
@@ -261,7 +266,7 @@ Be lenient with students trying to learn math."""
                 return {
                     "is_relevant": False,
                     "reason": reason,
-                    "suggested_response": f"I'm here to help you with math, {student.name}. Let's focus on your math homework or any math concepts you're working on. What math topic can I help you with?"
+                    "suggested_response": f"Olá {student.name}! I'm your math tutor, so I'm here to help with math topics and homework. What math question or problem would you like to work on? 😊"
                 }
             else:
                 # Default to allowing if unclear
