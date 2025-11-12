@@ -123,10 +123,31 @@ if page == "👨‍🎓 Student":
 
     # Assignment selection (optional)
     st.markdown("---")
+
+    # Debug: Check all assignments and filtered assignments
+    all_assignments = storage.list_assignments()
     assignments = storage.list_assignments(grade_level=student.grade_level)
 
-    if assignments:
+    # Show assignment availability section
+    if all_assignments or assignments:
         st.markdown("### 📝 Available Assignments")
+
+        if all_assignments and not assignments:
+            st.info(
+                f"No assignments available for Grade {student.grade_level}. "
+                f"(Total assignments in system: {len(all_assignments)})\n\n"
+                f"Ask your teacher to create assignments for Grade {student.grade_level} students."
+            )
+
+            # Debug info to help identify the issue
+            with st.expander("🔍 Debug: View all assignments"):
+                for assignment in all_assignments:
+                    st.markdown(
+                        f"- **{assignment.title}** (Grade {assignment.grade_level}) "
+                        f"{'✅ Match' if assignment.grade_level == student.grade_level else '❌ No match'}"
+                    )
+
+    if assignments:
 
         # Check if student already has a submission for any assignment
         assignment_options = {}
