@@ -1,9 +1,11 @@
 """Main Streamlit application for Ensina AI."""
 import streamlit as st
 from datetime import datetime
+import re
 from src.config import validate_config, APP_NAME, DATABASE_PATH
 from src.storage import Storage
 from src.tutor import MathTutor
+from src.graph_renderer import GraphRenderer
 
 # Page configuration
 st.set_page_config(
@@ -34,6 +36,50 @@ def get_tutor():
 
 storage = get_storage()
 tutor = get_tutor()
+
+
+def parse_and_display_message(content: str):
+    """
+    Parse message content and display text and graphs.
+
+    Args:
+        content: Message content that may contain graph specifications
+    """
+    # Pattern to match ```graph ... ``` blocks
+    graph_pattern = r'```graph\s*\n(.*?)\n```'
+
+    # Find all graph blocks
+    graphs = re.findall(graph_pattern, content, re.DOTALL)
+
+    if graphs:
+        # Split content by graph blocks
+        parts = re.split(graph_pattern, content, flags=re.DOTALL)
+
+        # Display alternating text and graphs
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                # Text content
+                if part.strip():
+                    st.markdown(part)
+            else:
+                # Graph specification (this is a captured group from the split)
+                # Skip it as we'll handle graphs from the separate list
+                pass
+
+        # Render graphs
+        for graph_json in graphs:
+            spec = GraphRenderer.parse_graph_spec(graph_json)
+            if spec:
+                try:
+                    fig = GraphRenderer.render(spec)
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error rendering graph: {e}")
+    else:
+        # No graphs, just display markdown
+        st.markdown(content)
+
 
 # Sidebar navigation
 st.sidebar.title("🎓 " + APP_NAME)
@@ -178,7 +224,7 @@ if page == "👨‍🎓 Student":
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            parse_and_display_message(message["content"])
 
     # Chat input
     if prompt := st.chat_input("Type your math question here..."):
@@ -240,7 +286,7 @@ if page == "👨‍🎓 Student":
                         assignment=current_assignment
                     )
 
-                    st.markdown(response)
+                    parse_and_display_message(response)
 
             # Add assistant response to chat
             st.session_state.messages.append({
