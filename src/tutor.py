@@ -5,7 +5,7 @@ from src.config import (
     LLM_PROVIDER, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENAI_BASE_URL,
     SLOW_MODEL, FAST_MODEL, TUTOR_SYSTEM_PROMPT
 )
-from src.storage import Storage, Student, LearningIndicators
+from src.storage import Storage, Student, LearningIndicators, Assignment
 from src.llm import create_llm_provider
 
 
@@ -31,19 +31,31 @@ class MathTutor:
         self.fast_model = self.llm.fast_model
         self.model = self.llm.slow_model
 
-    def _build_system_prompt(self, student: Student) -> str:
-        """Build personalized system prompt based on student info."""
+    def _build_system_prompt(self, student: Student, assignment: Optional[Assignment] = None) -> str:
+        """Build personalized system prompt based on student info and optional assignment."""
         prompt = TUTOR_SYSTEM_PROMPT + f"\n\nStudent Context:\n"
         prompt += f"- Name: {student.name}\n"
         prompt += f"- Grade Level: {student.grade_level}\n"
         prompt += f"- Adjust your language and examples to be appropriate for a grade {student.grade_level} student.\n"
+
+        # Add assignment context if available
+        if assignment:
+            prompt += f"\n\n**CURRENT ASSIGNMENT:**\n"
+            prompt += f"Title: {assignment.title}\n"
+            prompt += f"Topics: {assignment.topics}\n"
+            prompt += f"\nAssignment Details:\n{assignment.description}\n"
+            prompt += f"\n**Your Role:** Guide the student through this assignment using the Socratic method. "
+            prompt += f"Help them understand the concepts and solve the problems step by step. "
+            prompt += f"Reference the specific problems and context from the assignment above.\n"
+
         return prompt
 
     async def get_response(
         self,
         student: Student,
         conversation_history: List[Dict[str, str]],
-        new_message: str
+        new_message: str,
+        assignment: Optional[Assignment] = None
     ) -> str:
         """
         Get tutor response to student message.
@@ -52,6 +64,7 @@ class MathTutor:
             student: Student information
             conversation_history: Previous messages in this session
             new_message: New message from student
+            assignment: Optional assignment the student is working on
 
         Returns:
             Tutor's response
@@ -64,7 +77,7 @@ class MathTutor:
         # Get response using slow model for quality tutoring
         return self.llm.chat(
             messages=messages,
-            system=self._build_system_prompt(student),
+            system=self._build_system_prompt(student, assignment),
             max_tokens=1024,
             model=self.llm.slow_model
         )
@@ -73,7 +86,8 @@ class MathTutor:
         self,
         student: Student,
         conversation_history: List[Dict[str, str]],
-        new_message: str
+        new_message: str,
+        assignment: Optional[Assignment] = None
     ) -> str:
         """
         Synchronous version of get_response for Streamlit compatibility.
@@ -82,6 +96,7 @@ class MathTutor:
             student: Student information
             conversation_history: Previous messages in this session
             new_message: New message from student
+            assignment: Optional assignment the student is working on
 
         Returns:
             Tutor's response
@@ -94,7 +109,7 @@ class MathTutor:
         # Get response using slow model for quality tutoring
         return self.llm.chat(
             messages=messages,
-            system=self._build_system_prompt(student),
+            system=self._build_system_prompt(student, assignment),
             max_tokens=1024,
             model=self.llm.slow_model
         )
@@ -160,13 +175,22 @@ TOPICS: [topic1, topic2, topic3]
             "topics": topics or "General math discussion"
         }
 
-    def get_initial_greeting(self, student: Student) -> str:
+    def get_initial_greeting(self, student: Student, assignment: Optional[Assignment] = None) -> str:
         """Get initial greeting for student when starting a session."""
-        greetings = [
-            f"Hi {student.name}! I'm excited to help you with math today. What would you like to work on?",
-            f"Hello {student.name}! Ready to tackle some math? What topic are you studying?",
-            f"Hey {student.name}! What math question can I help you with today?",
-        ]
+        if assignment:
+            # Assignment-specific greeting
+            greetings = [
+                f"Olá {student.name}! Vejo que você está trabalhando na tarefa '{assignment.title}'. Vamos começar? Me conte, o que você entende sobre o problema?",
+                f"Oi {student.name}! Pronto para trabalhar em '{assignment.title}'? Que parte você quer começar?",
+                f"Olá {student.name}! Vamos trabalhar juntos em '{assignment.title}'. Por onde você gostaria de começar?",
+            ]
+        else:
+            # Free practice greeting
+            greetings = [
+                f"Hi {student.name}! I'm excited to help you with math today. What would you like to work on?",
+                f"Hello {student.name}! Ready to tackle some math? What topic are you studying?",
+                f"Hey {student.name}! What math question can I help you with today?",
+            ]
 
         # Simple rotation based on student ID
         return greetings[student.id % len(greetings)] if student.id else greetings[0]

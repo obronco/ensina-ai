@@ -130,9 +130,14 @@ if page == "👨‍🎓 Student":
         st.session_state.session_start = datetime.now()
         st.session_state.current_student_id = student.id
 
+    # Get current assignment if one is selected
+    current_assignment = None
+    if hasattr(st.session_state, 'current_assignment_id') and st.session_state.current_assignment_id:
+        current_assignment = storage.get_assignment(st.session_state.current_assignment_id)
+
     # Display initial greeting if no messages
     if not st.session_state.messages:
-        greeting = tutor.get_initial_greeting(student)
+        greeting = tutor.get_initial_greeting(student, current_assignment)
         st.session_state.messages.append({
             "role": "assistant",
             "content": greeting
@@ -199,7 +204,8 @@ if page == "👨‍🎓 Student":
                     response = tutor.get_response_sync(
                         student=student,
                         conversation_history=on_topic_history,
-                        new_message=prompt
+                        new_message=prompt,
+                        assignment=current_assignment
                     )
 
                     st.markdown(response)
