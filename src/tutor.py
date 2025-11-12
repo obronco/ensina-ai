@@ -114,6 +114,58 @@ class MathTutor:
             model=self.llm.slow_model
         )
 
+    def analyze_homework_image(
+        self,
+        student: Student,
+        image_data: str,
+        media_type: str,
+        question: str = "",
+        assignment: Optional[Assignment] = None
+    ) -> str:
+        """
+        Analyze a homework image using Claude Vision.
+
+        Args:
+            student: Student information
+            image_data: Base64-encoded image data
+            media_type: Image media type (e.g., 'image/jpeg', 'image/png')
+            question: Optional question or context from student
+            assignment: Optional assignment context
+
+        Returns:
+            Tutor's analysis and feedback on the homework image
+        """
+        # Build vision-enabled message with text + image
+        text_prompt = question if question else "Please analyze this math work and provide feedback."
+
+        message_content = [
+            {
+                "type": "text",
+                "text": text_prompt
+            },
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": image_data
+                }
+            }
+        ]
+
+        # Create message with multi-modal content
+        messages = [
+            {"role": "user", "content": message_content}
+        ]
+
+        # Use slow model for detailed image analysis
+        return self.llm.chat(
+            messages=messages,
+            system=self._build_system_prompt(student, assignment),
+            max_tokens=1024,
+            model=self.llm.slow_model
+        )
+
     def generate_session_summary(
         self,
         student: Student,

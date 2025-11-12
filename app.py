@@ -6,6 +6,7 @@ from src.config import validate_config, APP_NAME, DATABASE_PATH
 from src.storage import Storage
 from src.tutor import MathTutor
 from src.graph_renderer import GraphRenderer
+from src.image_utils import encode_image_bytes_to_base64, get_image_media_type
 
 # Page configuration
 st.set_page_config(
@@ -225,6 +226,70 @@ if page == "👨‍🎓 Student":
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             parse_and_display_message(message["content"])
+
+    # Image upload section (for homework analysis)
+    with st.expander("📷 Upload Homework Image", expanded=False):
+        st.markdown("Take a photo of your math work for personalized feedback!")
+        uploaded_file = st.file_uploader(
+            "Choose an image",
+            type=["jpg", "jpeg", "png", "gif", "webp"],
+            key="homework_image"
+        )
+        image_question = st.text_input(
+            "Optional: Add a question about your work",
+            placeholder="e.g., 'Is my approach correct?', 'What did I do wrong?'"
+        )
+
+        if uploaded_file is not None:
+            # Display uploaded image
+            st.image(uploaded_file, caption="Uploaded homework", use_container_width=True)
+
+            if st.button("🔍 Analyze My Work", type="primary"):
+                # Encode image to base64
+                image_bytes = uploaded_file.read()
+                image_data = encode_image_bytes_to_base64(image_bytes)
+                media_type = get_image_media_type(uploaded_file.name)
+
+                if image_data:
+                    # Display user message with image
+                    with st.chat_message("user"):
+                        st.image(uploaded_file, caption="My homework", width=200)
+                        if image_question:
+                            st.markdown(image_question)
+                        else:
+                            st.markdown("Please analyze this math work and provide feedback.")
+
+                    # Add to session messages
+                    user_msg = f"[Uploaded image: {uploaded_file.name}]"
+                    if image_question:
+                        user_msg += f"\n{image_question}"
+                    st.session_state.messages.append({
+                        "role": "user",
+                        "content": user_msg
+                    })
+
+                    # Get tutor analysis
+                    with st.chat_message("assistant"):
+                        with st.spinner("Analyzing your work..."):
+                            analysis = tutor.analyze_homework_image(
+                                student=student,
+                                image_data=image_data,
+                                media_type=media_type,
+                                question=image_question if image_question else "Please analyze this math work and provide feedback.",
+                                assignment=current_assignment
+                            )
+                            parse_and_display_message(analysis)
+
+                    # Add assistant response to chat
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": analysis
+                    })
+
+                    # Clear the uploader by rerunning
+                    st.rerun()
+                else:
+                    st.error("Failed to process image. Please try again.")
 
     # Chat input
     if prompt := st.chat_input("Type your math question here..."):
