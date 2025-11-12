@@ -88,9 +88,26 @@ if page == "👨‍🎓 Student":
             assignment_options[f"{status} - {assignment.title}"] = assignment.id
 
         if assignment_options:
+            # Determine default index based on current assignment
+            options_list = ["-- Free Practice --"] + list(assignment_options.keys())
+            default_index = 0
+
+            # If there's a current assignment, try to find it in the list
+            if hasattr(st.session_state, 'current_assignment_id') and st.session_state.current_assignment_id:
+                try:
+                    for idx, option_label in enumerate(options_list):
+                        if option_label != "-- Free Practice --":
+                            if assignment_options.get(option_label) == st.session_state.current_assignment_id:
+                                default_index = idx
+                                break
+                except:
+                    default_index = 0
+
             selected_assignment_label = st.selectbox(
                 "Select an assignment (or choose 'Free Practice' below)",
-                ["-- Free Practice --"] + list(assignment_options.keys())
+                options_list,
+                index=default_index,
+                key="assignment_selector"
             )
 
             if selected_assignment_label != "-- Free Practice --":
@@ -100,7 +117,7 @@ if page == "👨‍🎓 Student":
                 # Show assignment details
                 with st.expander("📋 Assignment Details", expanded=True):
                     st.markdown(f"**{assignment.title}**")
-                    st.markdown(f"{assignment.description}")
+                    st.markdown(assignment.description)
                     st.markdown(f"*Topics: {assignment.topics}*")
                     if assignment.due_date:
                         st.markdown(f"*Due: {assignment.due_date[:10]}*")
@@ -124,11 +141,22 @@ if page == "👨‍🎓 Student":
     if "current_student_id" not in st.session_state:
         st.session_state.current_student_id = None
 
+    if "previous_assignment_id" not in st.session_state:
+        st.session_state.previous_assignment_id = None
+
     # Reset conversation if student changed
     if st.session_state.current_student_id != student.id:
         st.session_state.messages = []
         st.session_state.session_start = datetime.now()
         st.session_state.current_student_id = student.id
+        st.session_state.previous_assignment_id = None
+
+    # Reset conversation if assignment changed
+    current_assignment_id = st.session_state.get('current_assignment_id', None)
+    if st.session_state.previous_assignment_id != current_assignment_id:
+        st.session_state.messages = []
+        st.session_state.session_start = datetime.now()
+        st.session_state.previous_assignment_id = current_assignment_id
 
     # Get current assignment if one is selected
     current_assignment = None
@@ -142,6 +170,10 @@ if page == "👨‍🎓 Student":
             "role": "assistant",
             "content": greeting
         })
+
+    # Show assignment mode indicator
+    if current_assignment:
+        st.info(f"📝 **Assignment Mode:** {current_assignment.title}")
 
     # Display chat history
     for message in st.session_state.messages:
