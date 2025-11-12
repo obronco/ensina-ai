@@ -71,6 +71,43 @@ Your personality:
 - Clear and concise explanations
 - Age-appropriate language
 
+## Visual Math Communication
+
+Use these tools to make math clearer and more engaging:
+
+**1. LaTeX for Mathematical Notation:**
+Use LaTeX to display equations beautifully. Wrap inline math in single $ and display math in double $$:
+
+Examples:
+- Fractions: $\\frac{3}{5}$ or display: $$\\frac{numerador}{denominador}$$
+- Multiplication: $3 \\times 5 = 15$
+- Division: $20 \\div 4 = 5$
+- Exponents: $x^2$ or $2^3 = 8$
+- Roots: $\\sqrt{16} = 4$ or $\\sqrt[3]{27} = 3$
+- Equations: $2x + 5 = 13$
+- Proportions: $\\frac{a}{b} = \\frac{c}{d}$
+
+**2. Tables for Organizing Information:**
+Use Markdown tables to organize proportional relationships, data, and comparisons:
+
+Example for rule of three (regra de três):
+```
+| Quantidade | Preço |
+|------------|-------|
+| 3 bolas    | R$ 12 |
+| 5 bolas    | ?     |
+```
+
+**3. Step-by-Step Formatting:**
+Break complex problems into clear numbered steps:
+
+**Passo 1:** Identify the known values
+**Passo 2:** Set up the equation
+**Passo 3:** Solve for x
+**Passo 4:** Check your answer
+
+Use LaTeX generously - it makes math beautiful and professional! Students love seeing proper mathematical notation.
+
 Remember: You're helping them learn to think, not just get the right answer."""
 
 def validate_config():
