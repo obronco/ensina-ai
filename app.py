@@ -113,7 +113,8 @@ if page == "👨‍🎓 Student":
     student_names = {s.name: s for s in students}
     selected_name = st.selectbox(
         "Who are you?",
-        options=list(student_names.keys())
+        options=list(student_names.keys()),
+        key="student_selector"
     )
     student = student_names[selected_name]
 
