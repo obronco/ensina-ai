@@ -68,6 +68,37 @@ This folder contains a comprehensive plan for converting the Ensina AI tutoring 
 
 ---
 
+### 5. **NEXTJS_VS_DJANGO_COMPARISON.md** ⚖️ NEXT.JS VS DJANGO
+**Detailed comparison of two viable paths**
+- Next.js + FastAPI vs Full-Stack Django
+- Feature-by-feature analysis
+- Real-time chat implementation comparison
+- Code reuse analysis
+- Performance benchmarks
+- Cost breakdown ($36k vs $24k)
+- Specific recommendations for Ensina AI
+
+**Best for:** Deciding between modern SPA vs traditional full-stack
+
+**Read time:** 45 minutes
+
+---
+
+### 6. **DJANGO_VS_NEXTJS_QUICKREF.md** ⚡ QUICK REFERENCE
+**Fast comparison guide** - Decision-making cheat sheet
+- Quick decision matrix
+- Cost comparison table
+- Development timeline
+- Real-time chat code examples
+- When to choose each option
+- Hybrid approach recommendation
+
+**Best for:** Quick decision-making, sharing with team
+
+**Read time:** 10 minutes
+
+---
+
 ## 🎯 Quick Navigation
 
 ### I'm a stakeholder, should we do this?
@@ -81,6 +112,9 @@ This folder contains a comprehensive plan for converting the Ensina AI tutoring 
 
 ### I want to understand our current problems
 → Read: **ARCHITECTURE_GAPS.md**
+
+### I'm deciding between Next.js and Django
+→ Read: **NEXTJS_VS_DJANGO_COMPARISON.md** (comprehensive comparison)
 
 ---
 
@@ -102,12 +136,25 @@ This folder contains a comprehensive plan for converting the Ensina AI tutoring 
 
 ## 📌 Key Recommendations (TL;DR)
 
-### Technology Stack
+### Technology Stack (Two Options)
+
+**Option 1: Next.js + FastAPI** (Recommended for scale)
 ```
 Frontend:  Next.js 14 (React + TypeScript)
 Backend:   FastAPI (Python)
-Database:  PostgreSQL (migrate from SQLite)
-Hosting:   Vercel (frontend) + Railway (backend)
+Database:  PostgreSQL
+Hosting:   Vercel + Railway
+Cost:      $36k dev + $912/year hosting
+Time:      12 weeks
+```
+
+**Option 2: Full-Stack Django** (Recommended for speed)
+```
+Full-Stack: Django + HTMX + Alpine.js
+Database:   PostgreSQL
+Hosting:    Railway or DigitalOcean
+Cost:       $24k dev + $672/year hosting
+Time:       8-10 weeks
 ```
 
 ### Migration Approach
